@@ -1,0 +1,4 @@
+Mission statement: Recreate a tournament hand replayer similar to the now
+defunct Universal replayer that is capable of replaying Full Tilt tournaments
+- with the possibility of expanding to other poker site and tournament
+  formats.
