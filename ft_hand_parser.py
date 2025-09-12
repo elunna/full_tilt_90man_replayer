@@ -1,6 +1,12 @@
 import re
 import sys
+import pprint
 from typing import List, Dict, Any
+
+# Hand info for each hand
+# Small blind
+# Big Blind
+# ante
 
 class FullTiltHandParser:
     def __init__(self, file_path: str):
@@ -23,18 +29,47 @@ class FullTiltHandParser:
         hand_info = {
             'header': lines[0] if lines else "",
             'players': [],
-            'actions': [],
+            'actions': {
+                'preflop': [],
+                'flop': [],
+                'turn': [],
+                'river': [],
+            },
             'summary': {},
         }
-        # Updated regex to match your example!
         player_re = re.compile(r"Seat\s+(\d+):\s+(.+?)\s+\(([\d,]+)\)")
-        action_re = re.compile(r"^(.+?): (bets|calls|raises|checks|folds)(.*)")
+        action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|mucks|wins)(.*)")
         summary_section = False
+
+        # Track which street we're in
+        current_street = 'preflop'
+        street_markers = {
+            'preflop': '*** HOLE CARDS ***',
+            'flop': '*** FLOP ***',
+            'turn': '*** TURN ***',
+            'river': '*** RIVER ***',
+            'summary': '*** SUMMARY ***'
+        }
+
         hole_cards_section = False
 
         for line in lines[1:]:
-            if line.startswith('*** HOLE CARDS ***'):
+            if line.startswith(street_markers['flop']):
+                current_street = 'flop'
+                continue
+            elif line.startswith(street_markers['turn']):
+                current_street = 'turn'
+                continue
+            elif line.startswith(street_markers['river']):
+                current_street = 'river'
+                continue
+            elif line.startswith(street_markers['summary']):
+                summary_section = True
+                continue
+            elif line.startswith(street_markers['preflop']):
                 hole_cards_section = True
+                continue
+
             if not hole_cards_section and line.startswith('Seat '):
                 m = player_re.match(line)
                 if m:
@@ -43,20 +78,19 @@ class FullTiltHandParser:
                         'name': m.group(2).strip(),
                         'chips': int(m.group(3).replace(',', ''))
                     })
-            elif action_re.match(line):
-                m = action_re.match(line)
-                if m:
-                    hand_info['actions'].append({
-                        'player': m.group(1),
-                        'action': m.group(2),
-                        'detail': m.group(3).strip()
-                    })
-            elif line.startswith('*** SUMMARY ***'):
-                summary_section = True
             elif summary_section:
                 if ':' in line:
                     k, v = line.split(':', 1)
                     hand_info['summary'][k.strip()] = v.strip()
+            elif action_re.match(line):
+                m = action_re.match(line)
+                if m:
+                    hand_info['actions'][current_street].append({
+                        'player': m.group(1),
+                        'action': m.group(2),
+                        'detail': m.group(3).strip()
+                    })
+
         return hand_info
 
     def print_summary(self):
@@ -64,8 +98,17 @@ class FullTiltHandParser:
         for i, hand in enumerate(self.hands[:3]):
             print(f"\nHand {i+1} header: {hand['header']}")
             print(f"Players: {[p['name'] for p in hand['players']]}")
-            print(f"First 5 actions: {hand['actions'][:5]}")
-            print(f"Summary: {hand['summary']}")
+            print()
+
+            for street in ['preflop', 'flop', 'turn', 'river']:
+                pprint.pp(f"{street.title()}")
+                for a in hand['actions'][street]:
+                    print(f"{a['player']} {a['action']} {a['detail']}")
+                # pprint.pp(f"{street.title()} actions: {hand['actions'][street]}")
+                print()
+
+            # do we need the summary?
+            #pprint.pp(f"Summary: {hand['summary']}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
