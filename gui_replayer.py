@@ -273,7 +273,13 @@ class HandReplayerGUI:
             cx + pot_radius, cy + pot_radius,
             fill="#222", outline="#fff", width=3
         )
-        self.table_canvas.create_text(cx, cy, text="POT", fill="white", font=("Arial", int(pot_radius * 0.6), "bold"))
+        # Compute and render pot
+        pot_amount = 0
+        if hand and self.current_street is not None and self.current_action_index is not None:
+            pot_amount = self.compute_pot_upto(hand, self.current_street, self.current_action_index)
+        # Smaller POT label to match other font sizes, with amount below it
+        self.table_canvas.create_text(cx, cy - 8, text="POT", fill="white", font=("Arial", 11, "bold"))
+        self.table_canvas.create_text(cx, cy + 12, text=f"${pot_amount:,}", fill="white", font=("Arial", 11))
 
     def draw_cards(self, x, y, cards, seat_y=None, cy=None):
         gap = 7
@@ -317,6 +323,98 @@ class HandReplayerGUI:
         # Ensure the rectangle is behind the text
         self.table_canvas.tag_lower(rect_id, text_id)
 
+    def _extract_first_amount(self, text: str) -> int:
+        """
+        Extract the first integer amount from a detail string (e.g., 'bets 100', 'posts the ante of 25').
+        Returns 0 if not found.
+        """
+        if not text:
+            return 0
+        m = re.search(r'(\d[\d,]*)', text)
+        if not m:
+            return 0
+        return int(m.group(1).replace(',', ''))
+
+    def _extract_raise_to_amount(self, text: str) -> int:
+        """
+        Extract the target 'to' amount from a raise string (e.g., 'raises to 300').
+        Falls back to first number if pattern not found.
+        """
+        if not text:
+            return 0
+        m = re.search(r'raises\s+to\s+(\d[\d,]*)', text)
+        if m:
+            return int(m.group(1).replace(',', ''))
+        # Fallback
+        return self._extract_first_amount(text)
+
+    def compute_pot_upto(self, hand, target_street: str, target_action_index: int) -> int:
+        """
+        Recompute pot from the start of the hand up to and including the given action index
+        on the target street. Handles:
+          - posts (blinds/antes)
+          - bets
+          - calls
+          - raises (using 'raises to' delta based on per-street contribution)
+        """
+        pot = 0
+        streets = ['preflop', 'flop', 'turn', 'river']
+
+        # Helper: process one action with street contribution tracking
+        def process_action(act, contrib):
+            nonlocal pot
+            action = act['action']
+            detail = act.get('detail', '')
+            player = act['player']
+            if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
+                return
+            if action == 'posts':
+                # Includes blinds and antes
+                amt = self._extract_first_amount(detail)
+                pot += amt
+                contrib[player] = contrib.get(player, 0) + amt
+            elif action == 'bets':
+                amt = self._extract_first_amount(detail)
+                pot += amt
+                contrib[player] = contrib.get(player, 0) + amt
+            elif action == 'calls':
+                amt = self._extract_first_amount(detail)
+                pot += amt
+                contrib[player] = contrib.get(player, 0) + amt
+            elif action == 'raises':
+                target_total = self._extract_raise_to_amount(detail)
+                prev = contrib.get(player, 0)
+                delta = max(0, target_total - prev)
+                pot += delta
+                contrib[player] = prev + delta
+            else:
+                # Any other money-adding verbs can be added here if they appear
+                pass
+
+        for s in streets:
+            # Reset per-street contributions (for correct 'raises to' semantics)
+            street_contrib = {p['name']: 0 for p in hand['players']}
+            actions = hand['actions'][s]
+            if not actions:
+                # Move to next street
+                if s == target_street:
+                    # No actions on target street before index: we're done
+                    break
+                continue
+
+            if s == target_street:
+                # Process up to current index inclusive
+                upto = max(0, min(target_action_index + 1, len(actions)))
+                for i in range(upto):
+                    process_action(actions[i], street_contrib)
+                break
+            else:
+                # Process entire street
+                for act in actions:
+                    process_action(act, street_contrib)
+
+        return pot
+
     def update_action_viewer(self):
         hand = self.hands[self.current_hand_index]
         streets = ['preflop', 'flop', 'turn', 'river']
@@ -333,7 +431,8 @@ class HandReplayerGUI:
             act = actions[self.current_action_index]
             if act['action'] == 'folds':
                 self.folded_players.add(act['player'])
-                self.update_table_canvas()
+        # Always refresh table to update pot display
+        self.update_table_canvas()
         self.display_action_history()
 
     def display_action_history(self):
