@@ -429,6 +429,9 @@ class HandReplayerGUI:
 
     def update_table_canvas(self):
         self.table_canvas.delete("all")
+        # Reset cached image refs for this frame to prevent growth
+        if hasattr(self, "_canvas_images"):
+            self._canvas_images.clear()
         width = self.table_canvas.winfo_width()
         height = self.table_canvas.winfo_height()
         cx = width // 2
@@ -483,10 +486,15 @@ class HandReplayerGUI:
         pot_amount = 0
         if hand and self.current_street is not None and self.current_action_index is not None:
             pot_amount = self.compute_pot_upto(hand, self.current_street, self.current_action_index)
-        # Smaller POT label to match other font sizes, with amount below it
-        self.table_canvas.create_text(cx, cy - 8, text="POT", fill="white", font=("Arial", 11, "bold"))
-        self.table_canvas.create_text(cx, cy + 12, text=f"${pot_amount:,}", fill="white", font=("Arial", 11))
+        # Move POT text down a bit to make space for community cards above
+        self.table_canvas.create_text(cx, cy + 24, text="POT", fill="white", font=("Arial", 11, "bold"))
+        self.table_canvas.create_text(cx, cy + 44, text=f"${pot_amount:,}", fill="white", font=("Arial", 11))
 
+        # Draw community cards revealed up to the current action
+        if hand and self.current_street is not None and self.current_action_index is not None:
+            board_cards = self.compute_board_upto(hand, self.current_street, self.current_action_index)
+            self.draw_community_cards(board_cards, cx, cy)
+        
         # Compute and draw current street bet/contribution markers
         if hand and self.current_street is not None and self.current_action_index is not None:
             non_ante_contrib, ante_contrib = self.compute_street_contrib_upto(
@@ -707,6 +715,83 @@ class HandReplayerGUI:
                 delta = max(0, target_total - prev)
                 non_ante[player] = prev + delta
         return non_ante, antes
+
+    # ====== Community cards helpers ======
+    def compute_board_upto(self, hand, target_street: str, target_action_index: int):
+        """
+        Determine which community cards should be visible up to the given action index.
+        Rule:
+          - On flop street: show flop only after the 'board' action on flop has been reached.
+          - On turn street: always show flop; show turn only after the 'board' action on turn.
+          - On river street: always show flop and turn; show river only after the 'board' action on river.
+        """
+        board = hand.get('board', {})
+        flop = list(board.get('flop', []) or [])
+        turn = list(board.get('turn', []) or [])
+        river = list(board.get('river', []) or [])
+
+        visible = []
+        streets = ['preflop', 'flop', 'turn', 'river']
+        s = target_street
+
+        if s == 'preflop':
+            return visible
+        elif s == 'flop':
+            # Include flop only if its 'board' action is within range
+            actions = hand['actions'].get('flop', [])
+            upto = max(0, min(target_action_index + 1, len(actions)))
+            seen_flop_board = any(a.get('action') == 'board' and 'flop' in a.get('detail', '').lower() for a in actions[:upto])
+            if seen_flop_board:
+                visible.extend(flop)
+            return visible
+        elif s == 'turn':
+            # Flop is already known fully at start of turn
+            visible.extend(flop)
+            actions = hand['actions'].get('turn', [])
+            upto = max(0, min(target_action_index + 1, len(actions)))
+            seen_turn_board = any(a.get('action') == 'board' and 'turn' in a.get('detail', '').lower() for a in actions[:upto])
+            if seen_turn_board:
+                visible.extend(turn)
+            return visible
+        elif s == 'river':
+            # Flop and turn are known at start of river
+            visible.extend(flop)
+            visible.extend(turn)
+            actions = hand['actions'].get('river', [])
+            upto = max(0, min(target_action_index + 1, len(actions)))
+            seen_river_board = any(a.get('action') == 'board' and 'river' in a.get('detail', '').lower() for a in actions[:upto])
+            if seen_river_board:
+                visible.extend(river)
+            return visible
+        return visible
+
+    def draw_community_cards(self, cards, cx, cy):
+        """
+        Draw the current visible community cards centered horizontally above the pot.
+        Uses same card image system as hole cards. Falls back to rectangle+text.
+        """
+        if not cards:
+            return
+        gap = 14
+        w = CARD_WIDTH
+        h = CARD_HEIGHT
+        total_w = len(cards) * w + (len(cards) - 1) * gap
+        start_x = int(cx - total_w / 2)
+        # Place slightly above pot center line
+        top = int(cy - h // 2 - 10)
+
+        for i, code in enumerate(cards):
+            left = start_x + i * (w + gap)
+            img = getattr(self, "get_card_image", None)
+            photo = img(code) if callable(img) else None
+            if photo is not None:
+                self.table_canvas.create_image(left, top, image=photo, anchor="nw")
+                if not hasattr(self, "_canvas_images"):
+                    self._canvas_images = []
+                self._canvas_images.append(photo)
+            else:
+                self.table_canvas.create_rectangle(left, top, left + w, top + h, fill="#fff", outline="#000", width=2)
+                self.table_canvas.create_text(left + w // 2, top + h // 2, text=code, font=("Arial", 16, "bold"))
 
     def draw_bet_markers(self, contrib_map, seat_positions, seat_map, cx, cy):
         """

@@ -38,6 +38,7 @@ class FullTiltHandParser:
             'summary': {},
             'hero': None,  # Store hero name
             'hole_cards': None,  # Store hero's hole cards
+            'board': {'flop': [], 'turn': [], 'river': []},  # Community cards
         }
         player_re = re.compile(r"Seat\s+(\d+):\s+(.+?)\s+\(([\d,]+)\)")
         action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|antes|mucks|wins)(.*)")
@@ -57,13 +58,45 @@ class FullTiltHandParser:
 
         for line in lines[1:]:
             if line.startswith(street_markers['flop']):
+                # Example: "*** FLOP *** [Ah Kd 7h]"
                 current_street = 'flop'
+                m = re.search(r'\[([^\]]+)\]', line)
+                if m:
+                    cards = [c.strip() for c in m.group(1).strip().split() if c.strip()]
+                    hand_info['board']['flop'] = cards
+                    # Insert synthetic action so replayer steps on board reveal
+                    hand_info['actions']['flop'].append({
+                        'player': 'Board',
+                        'action': 'board',
+                        'detail': f"flop [{m.group(1).strip()}]"
+                    })
                 continue
             elif line.startswith(street_markers['turn']):
+                # Example: "*** TURN *** [Ah Kd 7h] [Qc]"
                 current_street = 'turn'
+                # The last [...] holds the new card
+                parts = re.findall(r'\[([^\]]+)\]', line)
+                if parts:
+                    turn_card = parts[-1].strip()
+                    hand_info['board']['turn'] = [c.strip() for c in turn_card.split() if c.strip()]
+                    hand_info['actions']['turn'].append({
+                        'player': 'Board',
+                        'action': 'board',
+                        'detail': f"turn [{turn_card}]"
+                    })
                 continue
             elif line.startswith(street_markers['river']):
+                # Example: "*** RIVER *** [Ah Kd 7h Qc] [2d]"
                 current_street = 'river'
+                parts = re.findall(r'\[([^\]]+)\]', line)
+                if parts:
+                    river_card = parts[-1].strip()
+                    hand_info['board']['river'] = [c.strip() for c in river_card.split() if c.strip()]
+                    hand_info['actions']['river'].append({
+                        'player': 'Board',
+                        'action': 'board',
+                        'detail': f"river [{river_card}]"
+                    })
                 continue
             elif line.startswith(street_markers['summary']):
                 summary_section = True
