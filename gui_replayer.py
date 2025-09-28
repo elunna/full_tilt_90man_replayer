@@ -10,35 +10,7 @@ CARD_HEIGHT = 80
 SEAT_RADIUS = 44
 CARD_OFFSET_PX = 70  # Increased to move cards further inward
 
-def detect_hero_in_hand(hand):
-    """Parse lines in HOLE CARDS section, look for 'Dealt to {player name}'."""
-    if 'raw_lines' in hand:
-        lines = hand['raw_lines']
-    else:
-        lines = [hand['header']]
-        for street in ['preflop', 'flop', 'turn', 'river']:
-            for act in hand['actions'][street]:
-                lines.append(f"{act['player']} {act['action']} {act['detail']}")
-    hero = None
-    in_hole_cards = False
-    for line in lines:
-        if "*** HOLE CARDS ***" in line:
-            in_hole_cards = True
-            continue
-        if in_hole_cards:
-            m = re.match(r"Dealt to\s+(.+?)\s+\[", line)
-            if m:
-                hero = m.group(1).strip()
-                break
-        if in_hole_cards and line.startswith("***"):
-            break
-    return hero
-
 def get_hero_result(hand, hero=None):
-    if not hero:
-        hero = detect_hero_in_hand(hand)
-    if not hero:
-        return 0
     # Scan all actions for hero wins or ties
     for street in ['preflop', 'flop', 'turn', 'river']:
         for act in hand['actions'][street]:
@@ -62,7 +34,7 @@ class HandReplayerGUI:
         self.parser = None
         self.hands = []
         self.heroes = []
-        self.current_hand_index = None
+        self.current_hand_index = 0
         self.current_street = None
         self.current_action_index = None
         self.folded_players = set()
@@ -214,7 +186,7 @@ class HandReplayerGUI:
             self.hands = self.parser.hands
             self.heroes = []
             for hand in self.hands:
-                hero = detect_hero_in_hand(hand)
+                hero = self.hands[1]['hero']
                 self.heroes.append(hero)
             self.file_label.config(text=f"Loaded: {file_path.split('/')[-1]}")
             self.populate_hand_selector()
@@ -229,7 +201,7 @@ class HandReplayerGUI:
         y = 3
         for i, hand in enumerate(self.hands):
             hero = self.heroes[i] if i < len(self.heroes) else None
-            result = get_hero_result(hand, hero)
+            result = get_hero_result(hand, self.hands[self.current_hand_index]['hero'])
             color = "#a9a9a9"
             if result > 0:
                 color = "#66cc66"
@@ -301,9 +273,9 @@ class HandReplayerGUI:
                 self.update_table_canvas()
 
         # Debugging: Log the final state
-        print(f"Pot after forced bets: {self.pot}")
-        print(f"Player contributions: {self.player_contributions}")
-        print(f"Remaining actions: {hand['actions']['preflop']}")
+        #print(f"Pot after forced bets: {self.pot}")
+        #print(f"Player contributions: {self.player_contributions}")
+        #print(f"Remaining actions: {hand['actions']['preflop']}")
     def process_action(self, act, contrib):
         """
         Handles a single action, updating pot and contributions.

@@ -36,6 +36,8 @@ class FullTiltHandParser:
                 'river': [],
             },
             'summary': {},
+            'hero': None,  # Store hero name
+            'hole_cards': None  # Store hero's hole cards
         }
         player_re = re.compile(r"Seat\s+(\d+):\s+(.+?)\s+\(([\d,]+)\)")
         action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|antes|mucks|wins)(.*)")
@@ -70,6 +72,16 @@ class FullTiltHandParser:
                 hole_cards_section = True
                 continue
 
+            if hole_cards_section:
+                match = re.match(r"Dealt to\s+(.+?)\s+\[(.+?)\]", line)
+                if match:
+                    hand_info['hero'] = match.group(1).strip()
+                    hand_info['hole_cards'] = match.group(2).strip()
+                    hole_cards_section = False
+                    #print(hand_info['hero'])
+                    # print(hand_info['hole_cards'])
+                    continue
+
             if not hole_cards_section and line.startswith('Seat '):
                 m = player_re.match(line)
                 if m:
@@ -96,9 +108,9 @@ class FullTiltHandParser:
     def print_summary(self):
         print(f"Parsed {len(self.hands)} hands.")
         for i, hand in enumerate(self.hands[:3]):
-            print(f"\nHand {i+1} header: {hand['header']}")
-            print(f"Players: {[p['name'] for p in hand['players']]}")
-            print()
+            #print(f"\nHand {i+1} header: {hand['header']}")
+            #print(f"Players: {[p['name'] for p in hand['players']]}")
+            #print()
 
             for street in ['preflop', 'flop', 'turn', 'river']:
                 pprint.pp(f"{street.title()}")
@@ -117,3 +129,5 @@ if __name__ == "__main__":
     parser = FullTiltHandParser(sys.argv[1])
     parser.parse()
     parser.print_summary()
+    for hand in parser.hands:
+        print(f"Hero: {hand['hero']}, Hole Cards: {hand['hole_cards']}")
