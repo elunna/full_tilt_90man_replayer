@@ -3,6 +3,16 @@ from tkinter import filedialog, messagebox
 import math
 import re
 from ft_hand_parser import FullTiltHandParser
+import os
+
+# Optional high-quality PNG loading/resizing via Pillow
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except Exception:
+    Image = None
+    ImageTk = None
+    PIL_AVAILABLE = False
 
 SEATS = 9
 CARD_WIDTH = 60
@@ -49,6 +59,12 @@ class HandReplayerGUI:
 
         self.hand_boxes = []
         self.build_gui()
+
+        # Card image caches
+        self.card_image_paths = {}
+        self.card_image_cache = {}
+        self.card_back_key = None
+        self.load_card_images()
 
         # Bind arrow keys for navigation
         self.bind_keys()
@@ -176,6 +192,76 @@ class HandReplayerGUI:
     def get_centerward_position_fraction(self, seat_x, seat_y, cx, cy, fraction=0.6):
         """Return a point that lies `fraction` of the way from the seat toward the table center."""
         return (seat_x + (cx - seat_x) * fraction, seat_y + (cy - seat_y) * fraction)
+
+    # ====== Card image loading/rendering ======
+    def load_card_images(self):
+        """
+        Load all PNG images from ./png into a path map for lazy, sized loading.
+        Picks back_blue.png as the default card back if present, otherwise the first 'back*.png'.
+        """
+        base_dir = os.path.dirname(__file__)
+        png_dir = os.path.join(base_dir, "png")
+        self.card_image_paths.clear()
+        self.card_image_cache.clear()
+        self.card_back_key = None
+
+        if not os.path.isdir(png_dir):
+            return
+
+        for fname in os.listdir(png_dir):
+            if not fname.lower().endswith(".png"):
+                continue
+            key = os.path.splitext(fname)[0].lower()  # e.g., "ah", "back_blue"
+            self.card_image_paths[key] = os.path.join(png_dir, fname)
+
+        # Choose default back
+        if "back_blue" in self.card_image_paths:
+            self.card_back_key = "back_blue"
+        else:
+            # pick any 'back...' image if available
+            for k in self.card_image_paths.keys():
+                if k.startswith("back"):
+                    self.card_back_key = k
+                    break
+
+    def get_card_image(self, code):
+        """
+        Return a PhotoImage for the given card code (e.g., 'Ah', 'Kd').
+        Unknown codes (like '??') or missing assets fall back to the default back image.
+        Images are resized to CARD_WIDTH x CARD_HEIGHT (via PIL if available).
+        """
+        # Normalize desired key
+        key = None
+        if code and code != "??":
+            key = code.lower()
+        else:
+            key = self.card_back_key
+
+        # If we still don't have a key, no image is available
+        if not key:
+            return None
+
+        cache_key = (key, CARD_WIDTH, CARD_HEIGHT)
+        if cache_key in self.card_image_cache:
+            return self.card_image_cache[cache_key]
+
+        path = self.card_image_paths.get(key)
+        if not path:
+            return None
+
+        try:
+            if PIL_AVAILABLE:
+                img = Image.open(path).convert("RGBA")
+                img = img.resize((CARD_WIDTH, CARD_HEIGHT), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+            else:
+                # Fallback: no resize support; image should ideally match target size
+                photo = tk.PhotoImage(file=path)
+        except Exception:
+            return None
+
+        self.card_image_cache[cache_key] = photo
+        return photo
 
     def on_canvas_resize(self, event):
         self.update_table_canvas()
@@ -428,19 +514,38 @@ class HandReplayerGUI:
         total_width = num_cards * card_width + (num_cards - 1) * gap
         start_x = x - total_width / 2
 
+        # Lay cards side-by-side centered on (x), with no overlap
+        num_cards = len(cards) if cards else 0
+        if num_cards <= 0:
+            return
+        total_width = num_cards * card_width + (num_cards - 1) * gap
+        start_x = x - total_width / 2
+
         for i, card in enumerate(cards):
             left = int(start_x + i * (card_width + gap))
             top = int(card_anchor_y)
             right = left + card_width
             bottom = top + card_height
-            # Card background
-            self.table_canvas.create_rectangle(
-                left, top, right, bottom, fill="#fff", outline="#000", width=2
-            )
-            # Rank/Suit text centered in the card
-            self.table_canvas.create_text(
-                left + card_width // 2, top + card_height // 2, text=card, font=("Arial", 15, "bold")
-            )
+
+            # Try to draw card image (face or back)
+            img = self.get_card_image(card)
+            if img is not None:
+                # Use top-left anchor so we can position precisely
+                self.table_canvas.create_image(left, top, image=img, anchor="nw")
+                # Keep a reference on the canvas to avoid garbage collection
+                # by tagging images; alternatively store them on self
+                if not hasattr(self, "_canvas_images"):
+                    self._canvas_images = []
+                self._canvas_images.append(img)
+            else:
+                # Fallback: draw a white card with text
+                self.table_canvas.create_rectangle(
+                    left, top, right, bottom, fill="#fff", outline="#000", width=2
+                )
+                self.table_canvas.create_text(
+                    left + card_width // 2, top + card_height // 2, text=card, font=("Arial", 15, "bold")
+                )
+
 
     def draw_seat_label(self, x, y, r, name, chips, cy):
         """Draw a black box with white text for player info above or below the seat."""
