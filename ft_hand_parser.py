@@ -82,7 +82,7 @@ class FullTiltHandParser:
                     # print(hand_info['hole_cards'])
                     continue
 
-            if not hole_cards_section and line.startswith('Seat '):
+            if not summary_section and line.startswith('Seat '):
                 m = player_re.match(line)
                 if m:
                     hand_info['players'].append({
