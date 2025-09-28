@@ -252,13 +252,10 @@ class HandReplayerGUI:
                     x - r, y - r, x + r, y + r,
                     fill=color, outline="#222", width=2
                 )
-                self.table_canvas.create_text(
-                    x, y - r + 16, text=f"{player['name']}", font=("Arial", 11)
-                )
-                # Show "${chip amount}" only
-                self.table_canvas.create_text(
-                    x, y + r - 18, text=f"${player['chips']}", font=("Arial", 11)
-                )
+
+                # Draw player name and chips in a black box with white text
+                self.draw_seat_label(x, y, r, player['name'], player['chips'], cy)
+
                 if not is_folded:
                     # Move cards further inward toward center
                     card_x, card_y = self.get_card_position(x, y, cx, cy, CARD_OFFSET_PX)
@@ -295,6 +292,30 @@ class HandReplayerGUI:
                 cx, cy_card, cx + card_width, cy_card + card_height, fill="#fff", outline="#000", width=2
             )
             self.table_canvas.create_text(cx + card_width // 2, cy_card + card_height // 2, text=card, font=("Arial", 15, "bold"))
+
+    def draw_seat_label(self, x, y, r, name, chips, cy):
+        """Draw a black box with white text for player info above or below the seat."""
+        is_bottom = y > cy
+        anchor = 'n' if is_bottom else 's'
+        margin = 8
+        pad_x = 6
+        pad_y = 4
+
+        label_text = f"{name}\n${chips}"
+        tx = x
+        ty = y + r + margin if is_bottom else y - r - margin
+
+        # Create the text first to measure bbox, then draw a rectangle behind it.
+        text_id = self.table_canvas.create_text(
+            tx, ty, text=label_text, font=("Arial", 11), fill="white", anchor=anchor
+        )
+        x1, y1, x2, y2 = self.table_canvas.bbox(text_id)
+        rect_id = self.table_canvas.create_rectangle(
+            x1 - pad_x, y1 - pad_y, x2 + pad_x, y2 + pad_y,
+            fill="black", outline="#fff", width=1
+        )
+        # Ensure the rectangle is behind the text
+        self.table_canvas.tag_lower(rect_id, text_id)
 
     def update_action_viewer(self):
         hand = self.hands[self.current_hand_index]
