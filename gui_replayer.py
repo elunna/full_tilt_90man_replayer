@@ -71,6 +71,46 @@ class HandReplayerGUI:
         self.hand_boxes = []
         self.build_gui()
 
+        # Bind arrow keys for navigation
+        self.bind_keys()
+
+    def bind_keys(self):
+        """Bind arrow keys to navigation methods."""
+        self.root.bind("<Left>", lambda e: self.prev_action())
+        self.root.bind("<Right>", lambda e: self.next_action())
+        self.root.bind("<Down>", lambda e: self.navigate_hands(-1))
+        self.root.bind("<Up>", lambda e: self.navigate_hands(1))
+        
+    def prev_action(self):
+        """Navigate to the previous action."""
+        if self.current_action_index > 0:
+            self.current_action_index -= 1
+            self.update_action_viewer()
+        else:
+            # Logic for moving to the previous street (if applicable)
+            pass
+
+    def next_action(self):
+        """Navigate to the next action."""
+        if self.current_action_index < len(self.hands[self.current_hand_index]['actions'][self.current_street]) - 1:
+            self.current_action_index += 1
+            self.update_action_viewer()
+        else:
+            # Logic for moving to the next street (if applicable)
+            pass
+
+    def navigate_hands(self, direction):
+        """Navigate through hands."""
+        new_index = self.current_hand_index + direction
+        if 0 <= new_index < len(self.hands):
+            self.select_hand(new_index)
+
+    def select_hand(self, idx):
+        """Select a hand by index."""
+        self.current_hand_index = idx
+        # Logic to update the display for the selected hand
+        pass
+    
     def build_gui(self):
         # Top: main content area (left: table; right: hand playback)
         main_frame = tk.Frame(self.root)
