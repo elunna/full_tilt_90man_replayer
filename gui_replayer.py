@@ -139,6 +139,10 @@ class HandReplayerGUI:
         return positions
 
     def get_card_position(self, seat_x, seat_y, cx, cy, offset_px):
+        # Increase inward offset for bottom seats by ~10px to prevent overlap
+        if seat_y > cy:  # Bottom half of table
+            offset_px += 10
+        
         dx = cx - seat_x
         dy = cy - seat_y
         dist = math.hypot(dx, dy)
@@ -259,7 +263,7 @@ class HandReplayerGUI:
                     # Move cards further inward toward center
                     card_x, card_y = self.get_card_position(x, y, cx, cy, CARD_OFFSET_PX)
                     cards = self.player_cards.get(player['name'], ['??', '??'])
-                    self.draw_cards(card_x, card_y, cards)
+                    self.draw_cards(card_x, card_y, cards, y, cy)
             else:
                 self.table_canvas.create_oval(
                     x - r, y - r, x + r, y + r,
@@ -274,17 +278,23 @@ class HandReplayerGUI:
         )
         self.table_canvas.create_text(cx, cy, text="POT", fill="white", font=("Arial", int(pot_radius * 0.6), "bold"))
 
-    def draw_cards(self, x, y, cards):
+    def draw_cards(self, x, y, cards, seat_y=None, cy=None):
         gap = 7
         card_width = CARD_WIDTH
         card_height = CARD_HEIGHT
+        
+        # For bottom seats, anchor cards upward by half a card height to prevent overlap
+        card_anchor_y = y
+        if seat_y is not None and cy is not None and seat_y > cy:
+            card_anchor_y = y - card_height // 2
+        
         for i, card in enumerate(cards):
             cx = x - card_width // 2 + i * (card_width + gap) // 2
-            cy = y
+            cy_card = card_anchor_y
             self.table_canvas.create_rectangle(
-                cx, cy, cx + card_width, cy + card_height, fill="#fff", outline="#000", width=2
+                cx, cy_card, cx + card_width, cy_card + card_height, fill="#fff", outline="#000", width=2
             )
-            self.table_canvas.create_text(cx + card_width // 2, cy + card_height // 2, text=card, font=("Arial", 15, "bold"))
+            self.table_canvas.create_text(cx + card_width // 2, cy_card + card_height // 2, text=card, font=("Arial", 15, "bold"))
 
     def update_action_viewer(self):
         hand = self.hands[self.current_hand_index]
