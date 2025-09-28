@@ -154,6 +154,10 @@ class HandReplayerGUI:
         card_y = seat_y + ny * offset_px
         return card_x, card_y
 
+    def get_centerward_position_fraction(self, seat_x, seat_y, cx, cy, fraction=0.6):
+        """Return a point that lies `fraction` of the way from the seat toward the table center."""
+        return (seat_x + (cx - seat_x) * fraction, seat_y + (cy - seat_y) * fraction)
+
     def on_canvas_resize(self, event):
         self.update_table_canvas()
 
@@ -267,12 +271,15 @@ class HandReplayerGUI:
                     fill="#444", outline="#222", width=2
                 )
                 self.table_canvas.create_text(x, y, text="(empty)", font=("Arial", 9))
+
+        # Pot area
         pot_radius = int(min(table_a, table_b) * 0.25)
         self.table_canvas.create_oval(
             cx - pot_radius, cy - pot_radius,
             cx + pot_radius, cy + pot_radius,
             fill="#222", outline="#fff", width=3
         )
+
         # Compute and render pot
         pot_amount = 0
         if hand and self.current_street is not None and self.current_action_index is not None:
@@ -280,6 +287,11 @@ class HandReplayerGUI:
         # Smaller POT label to match other font sizes, with amount below it
         self.table_canvas.create_text(cx, cy - 8, text="POT", fill="white", font=("Arial", 11, "bold"))
         self.table_canvas.create_text(cx, cy + 12, text=f"${pot_amount:,}", fill="white", font=("Arial", 11))
+
+        # Compute and draw current street bet/contribution markers
+        if hand and self.current_street is not None and self.current_action_index is not None:
+            contrib = self.compute_street_contrib_upto(hand, self.current_street, self.current_action_index)
+            self.draw_bet_markers(contrib, seat_positions, seat_map, cx, cy)
 
     def draw_cards(self, x, y, cards, seat_y=None, cy=None):
         gap = 7
@@ -323,9 +335,11 @@ class HandReplayerGUI:
         # Ensure the rectangle is behind the text
         self.table_canvas.tag_lower(rect_id, text_id)
 
+    # ====== Pot and contribution helpers ======
+
     def _extract_first_amount(self, text: str) -> int:
         """
-        Extract the first integer amount from a detail string (e.g., 'bets 100', 'posts the ante of 25').
+        Extract the first integer amount from a detail string (e.g., 'bets 100', 'posts the ante 25').
         Returns 0 if not found.
         """
         if not text:
@@ -396,9 +410,7 @@ class HandReplayerGUI:
             street_contrib = {p['name']: 0 for p in hand['players']}
             actions = hand['actions'][s]
             if not actions:
-                # Move to next street
                 if s == target_street:
-                    # No actions on target street before index: we're done
                     break
                 continue
 
@@ -414,6 +426,64 @@ class HandReplayerGUI:
                     process_action(act, street_contrib)
 
         return pot
+
+    def compute_street_contrib_upto(self, hand, target_street: str, target_action_index: int):
+        """
+        Compute per-player contribution for the target street only,
+        up to and including target_action_index.
+        """
+        contrib = {p['name']: 0 for p in hand['players']}
+        actions = hand['actions'].get(target_street, [])
+        upto = max(0, min(target_action_index + 1, len(actions)))
+        for i in range(upto):
+            act = actions[i]
+            action = act['action']
+            detail = act.get('detail', '')
+            player = act['player']
+            if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
+                continue
+            if action == 'posts':
+                amt = self._extract_first_amount(detail)
+                contrib[player] = contrib.get(player, 0) + amt
+            elif action == 'bets':
+                amt = self._extract_first_amount(detail)
+                contrib[player] = contrib.get(player, 0) + amt
+            elif action == 'calls':
+                amt = self._extract_first_amount(detail)
+                contrib[player] = contrib.get(player, 0) + amt
+            elif action == 'raises':
+                target_total = self._extract_raise_to_amount(detail)
+                prev = contrib.get(player, 0)
+                delta = max(0, target_total - prev)
+                contrib[player] = prev + delta
+        return contrib
+
+    def draw_bet_markers(self, contrib_map, seat_positions, seat_map, cx, cy):
+        """
+        Draw a small chip circle toward the center for each player's current street contribution.
+        """
+        # Build name->seat index map for placement
+        name_to_seat = {}
+        for seat, pdata in seat_map.items():
+            name_to_seat[pdata['name']] = seat
+
+        for name, amount in contrib_map.items():
+            if amount <= 0:
+                continue
+            seat = name_to_seat.get(name)
+            if not seat:
+                continue
+            sx, sy = seat_positions[seat - 1]
+            # Position further toward the center than hole cards
+            bx, by = self.get_centerward_position_fraction(sx, sy, cx, cy, fraction=0.65)
+
+            # Draw chip circle and amount
+            r = 14
+            self.table_canvas.create_oval(bx - r, by - r, bx + r, by + r, fill="#f0c040", outline="#222", width=2)
+            # Keep the text small to fit typical amounts
+            self.table_canvas.create_text(bx, by, text=f"{amount:,}", fill="#000", font=("Arial", 9, "bold"))
+
+    # ====== UI updates and navigation ======
 
     def update_action_viewer(self):
         hand = self.hands[self.current_hand_index]
@@ -431,7 +501,7 @@ class HandReplayerGUI:
             act = actions[self.current_action_index]
             if act['action'] == 'folds':
                 self.folded_players.add(act['player'])
-        # Always refresh table to update pot display
+        # Refresh table to update pot and bet markers
         self.update_table_canvas()
         self.display_action_history()
 
