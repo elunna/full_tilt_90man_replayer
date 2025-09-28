@@ -238,6 +238,19 @@ class HandReplayerGUI:
         self.player_cards = {p['name']: ['??', '??'] for p in hand['players']}
         self.current_street = 'preflop'
         self.current_action_index = 0
+
+        # Reveal hero hole cards immediately if available
+        # ft_hand_parser stores:
+        #   - hand['hero'] as the hero's name
+        #   - hand['hole_cards'] as a string like "Ah Kd"
+        hero_name = hand.get('hero')
+        hole = hand.get('hole_cards')
+        if hero_name and hole:
+            # Split on whitespace or commas to be robust
+            parts = [p.strip() for p in re.split(r'[\s,]+', hole) if p.strip()]
+            if len(parts) >= 2:
+                self.player_cards[hero_name] = parts[:2]
+
         self.update_table_canvas()
         self.update_action_viewer()
 
