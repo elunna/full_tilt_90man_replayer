@@ -15,8 +15,8 @@ except Exception:
     PIL_AVAILABLE = False
 
 SEATS = 9
-CARD_WIDTH = 60
-CARD_HEIGHT = 80
+CARD_WIDTH = 120
+CARD_HEIGHT = 160
 SEAT_RADIUS = 44
 CARD_OFFSET_PX = 70  # Increased to move cards further inward
 
@@ -498,54 +498,59 @@ class HandReplayerGUI:
             self.draw_ante_markers(ante_contrib, seat_positions, seat_map, cx, cy)
 
     def draw_cards(self, x, y, cards, seat_y=None, cy=None):
-        gap = 7
         card_width = CARD_WIDTH
         card_height = CARD_HEIGHT
-        
+
         # For bottom seats, anchor cards upward by half a card height to prevent overlap
         card_anchor_y = y
         if seat_y is not None and cy is not None and seat_y > cy:
             card_anchor_y = y - card_height // 2
 
-        # Lay cards side-by-side centered on (x), with no overlap
-        num_cards = len(cards) if cards else 0
-        if num_cards <= 0:
+        # Nothing to draw
+        if not cards:
             return
-        total_width = num_cards * card_width + (num_cards - 1) * gap
-        start_x = x - total_width / 2
 
-        # Lay cards side-by-side centered on (x), with no overlap
-        num_cards = len(cards) if cards else 0
-        if num_cards <= 0:
-            return
-        total_width = num_cards * card_width + (num_cards - 1) * gap
-        start_x = x - total_width / 2
+        # Compute front card position centered on x
+        front_left = int(x - card_width // 2)
+        front_top = int(card_anchor_y)
 
-        for i, card in enumerate(cards):
-            left = int(start_x + i * (card_width + gap))
-            top = int(card_anchor_y)
-            right = left + card_width
-            bottom = top + card_height
+        # Overlap offsets for the back card: slightly left and slightly raised
+        back_dx = -int(card_width * 0.28)   # shift left ~28% of width
+        back_dy = -int(card_height * 0.10)  # raise ~10% of height
 
-            # Try to draw card image (face or back)
-            img = self.get_card_image(card)
-            if img is not None:
-                # Use top-left anchor so we can position precisely
-                self.table_canvas.create_image(left, top, image=img, anchor="nw")
-                # Keep a reference on the canvas to avoid garbage collection
-                # by tagging images; alternatively store them on self
+        # Helper to draw a single card (image first, fallback to rectangle+text)
+        def draw_one(left, top, code):
+            img = getattr(self, "get_card_image", None)
+            photo = img(code) if callable(img) else None
+            if photo is not None:
+                self.table_canvas.create_image(left, top, image=photo, anchor="nw")
+                # prevent GC of PhotoImage
                 if not hasattr(self, "_canvas_images"):
                     self._canvas_images = []
-                self._canvas_images.append(img)
+                self._canvas_images.append(photo)
             else:
-                # Fallback: draw a white card with text
+                # Fallback to simple rectangle + code text
                 self.table_canvas.create_rectangle(
-                    left, top, right, bottom, fill="#fff", outline="#000", width=2
+                    left, top, left + card_width, top + card_height,
+                    fill="#fff", outline="#000", width=2
                 )
                 self.table_canvas.create_text(
-                    left + card_width // 2, top + card_height // 2, text=card, font=("Arial", 15, "bold")
+                    left + card_width // 2, top + card_height // 2,
+                    text=code, font=("Arial", 18, "bold")
                 )
 
+        # If two or more entries, treat the first as the back card and second as the front card
+        if len(cards) >= 2:
+            back_code = cards[0] if cards[0] else "??"
+            front_code = cards[1] if cards[1] else "??"
+
+            # Draw back first so it appears beneath
+            draw_one(front_left + back_dx, front_top + back_dy, back_code if back_code != "" else "??")
+            draw_one(front_left, front_top, front_code if front_code != "" else "??")
+        else:
+            # Single card (e.g., unknown second card): draw centered
+            code = cards[0] if cards[0] else "??"
+            draw_one(front_left, front_top, code if code != "" else "??")
 
     def draw_seat_label(self, x, y, r, name, chips, cy):
         """Draw a black box with white text for player info above or below the seat."""
