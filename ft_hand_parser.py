@@ -37,7 +37,7 @@ class FullTiltHandParser:
             },
             'summary': {},
             'hero': None,  # Store hero name
-            'hole_cards': None  # Store hero's hole cards
+            'hole_cards': None,  # Store hero's hole cards
         }
         player_re = re.compile(r"Seat\s+(\d+):\s+(.+?)\s+\(([\d,]+)\)")
         action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|antes|mucks|wins)(.*)")
@@ -102,9 +102,19 @@ class FullTiltHandParser:
                         'action': m.group(2),
                         'detail': m.group(3).strip()
                     })
-
         return hand_info
 
+    def check_voluntary_investment(self, hand_history):
+        """
+        Check if the hero voluntarily invested money in the hand.
+        This excludes posting blinds or antes and folding.
+        """
+        hero_actions = self.extract_hero_actions(hand_history)
+        for action in hero_actions:
+            if action in {"bets", "calls", "raises"}:
+                return True
+        return False
+    
     def print_summary(self):
         print(f"Parsed {len(self.hands)} hands.")
         for i, hand in enumerate(self.hands[:3]):

@@ -11,11 +11,14 @@ SEAT_RADIUS = 44
 CARD_OFFSET_PX = 70  # Increased to move cards further inward
 
 def get_hero_result(hand, hero=None):
+    vpip = False
     # Scan all actions for hero wins or ties
     for street in ['preflop', 'flop', 'turn', 'river']:
         for act in hand['actions'][street]:
+            if act['player'] != hero:
+                continue
             # Win
-            if act['action'] == 'wins' and act['player'] == hero:
+            if act['action'] == 'wins':
                 return 1
             # Split pot detection
             if act['player'] == hero and (
@@ -24,7 +27,11 @@ def get_hero_result(hand, hero=None):
                 act['action'].startswith('ties for')
             ):
                 return 1
-    return -1
+            # Check VPIP
+            if act['action'] in ('bets', 'calls', 'raises'):
+                vpip = True
+                break
+    return -1 if vpip else 0;
 
 class HandReplayerGUI:
     def __init__(self, root):
@@ -33,7 +40,7 @@ class HandReplayerGUI:
 
         self.parser = None
         self.hands = []
-        self.heroes = []
+        self.heroes = [] # Shouldn't this just be a single field?
         self.current_hand_index = 0
         self.current_street = None
         self.current_action_index = None
