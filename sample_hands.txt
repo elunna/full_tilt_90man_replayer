@@ -1,0 +1,53 @@
+Full Tilt Poker Game #12345678901: $3 + $0.30 KO Sit & Go (123456789), No Limit Hold'em - Level I (10/20) - 2011/01/26 10:00:00 ET
+Table '123456789 1' 9-max Seat #1 is the button
+Seat 1: Player1 (1500 in chips)
+Seat 2: Player2 (1500 in chips)
+Seat 3: Player3 (1500 in chips)
+*** HOLE CARDS ***
+Dealt to Player1 [As Ks]
+Player2: posts small blind 10
+Player3: posts big blind 20
+Player1: raises to 60
+Player2: folds
+Player3: calls 40
+*** FLOP *** [Ah 5h 2c]
+Player3: checks
+Player1: bets 100
+Player3: folds
+Player1: wins the pot (130)
+*** SUMMARY ***
+Total pot 130 | Rake 0
+Board: [Ah 5h 2c]
+Seat 1: Player1 (button) showed [As Ks] and won (130)
+Seat 2: Player2 (small blind) folded before Flop
+Seat 3: Player3 (big blind) folded on the Flop
+
+Full Tilt Poker Game #12345678902: $3 + $0.30 KO Sit & Go (123456789), No Limit Hold'em - Level I (10/20) - 2011/01/26 10:01:00 ET
+Table '123456789 1' 9-max Seat #2 is the button
+Seat 1: Player1 (1570 in chips)
+Seat 2: Player2 (1490 in chips)
+Seat 3: Player3 (1440 in chips)
+*** HOLE CARDS ***
+Dealt to Player1 [Qh Qd]
+Player3: posts small blind 10
+Player1: posts big blind 20
+Player2: raises to 80
+Player3: folds
+Player1: calls 60
+*** FLOP *** [Qs 9h 3d]
+Player1: checks
+Player2: bets 120
+Player1: calls 120
+*** TURN *** [Qs 9h 3d] [7c]
+Player1: checks
+Player2: checks
+*** RIVER *** [Qs 9h 3d 7c] [2h]
+Player1: bets 200
+Player2: folds
+Player1: wins the pot (410)
+*** SUMMARY ***
+Total pot 410 | Rake 0
+Board: [Qs 9h 3d 7c 2h]
+Seat 1: Player1 (big blind) showed [Qh Qd] and won (410)
+Seat 2: Player2 (button) folded on the River
+Seat 3: Player3 (small blind) folded before Flop

@@ -70,6 +70,7 @@ class HandReplayerGUI:
 
         self.hand_boxes = []
         self.build_gui()
+        self.setup_key_bindings()
 
     def build_gui(self):
         # Top: main content area (left: table; right: hand playback)
@@ -128,6 +129,52 @@ class HandReplayerGUI:
         self.street_label.pack(side='left', padx=10)
         self.action_label = tk.Label(controls_frame, text="Action: ")
         self.action_label.pack(side='left', padx=10)
+
+    def setup_key_bindings(self):
+        """Setup keyboard navigation using arrow keys."""
+        # Allow the window to capture focus and keyboard events
+        self.root.focus_set()
+        
+        # Bind arrow keys for navigation
+        self.root.bind('<Left>', self.on_key_left)
+        self.root.bind('<Right>', self.on_key_right)
+        self.root.bind('<Up>', self.on_key_up)
+        self.root.bind('<Down>', self.on_key_down)
+        
+        # Make sure the window can receive keyboard events
+        self.root.bind('<Key>', self.on_key_press)
+        
+        # Make sure clicking on the canvas doesn't steal focus from keyboard navigation
+        self.root.bind('<Button-1>', self.on_click)
+
+    def on_click(self, event):
+        """Ensure keyboard focus is maintained after mouse clicks."""
+        self.root.focus_set()
+
+    def on_key_press(self, event):
+        """Handle general key press events to maintain focus."""
+        # This helps ensure the window maintains keyboard focus
+        pass
+
+    def on_key_left(self, event):
+        """Handle left arrow key - go to previous action."""
+        if self.hands and self.current_hand_index is not None:
+            self.prev_action()
+
+    def on_key_right(self, event):
+        """Handle right arrow key - go to next action."""
+        if self.hands and self.current_hand_index is not None:
+            self.next_action()
+
+    def on_key_up(self, event):
+        """Handle up arrow key - go to previous hand."""
+        if self.hands and self.current_hand_index is not None and self.current_hand_index > 0:
+            self.select_hand(self.current_hand_index - 1)
+
+    def on_key_down(self, event):
+        """Handle down arrow key - go to next hand."""
+        if self.hands and self.current_hand_index is not None and self.current_hand_index < len(self.hands) - 1:
+            self.select_hand(self.current_hand_index + 1)
 
     def get_seat_positions(self, seats, cx, cy, a, b):
         positions = []
