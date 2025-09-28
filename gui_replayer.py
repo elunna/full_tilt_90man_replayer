@@ -420,14 +420,27 @@ class HandReplayerGUI:
         card_anchor_y = y
         if seat_y is not None and cy is not None and seat_y > cy:
             card_anchor_y = y - card_height // 2
-        
+
+        # Lay cards side-by-side centered on (x), with no overlap
+        num_cards = len(cards) if cards else 0
+        if num_cards <= 0:
+            return
+        total_width = num_cards * card_width + (num_cards - 1) * gap
+        start_x = x - total_width / 2
+
         for i, card in enumerate(cards):
-            cx = x - card_width // 2 + i * (card_width + gap) // 2
-            cy_card = card_anchor_y
+            left = int(start_x + i * (card_width + gap))
+            top = int(card_anchor_y)
+            right = left + card_width
+            bottom = top + card_height
+            # Card background
             self.table_canvas.create_rectangle(
-                cx, cy_card, cx + card_width, cy_card + card_height, fill="#fff", outline="#000", width=2
+                left, top, right, bottom, fill="#fff", outline="#000", width=2
             )
-            self.table_canvas.create_text(cx + card_width // 2, cy_card + card_height // 2, text=card, font=("Arial", 15, "bold"))
+            # Rank/Suit text centered in the card
+            self.table_canvas.create_text(
+                left + card_width // 2, top + card_height // 2, text=card, font=("Arial", 15, "bold")
+            )
 
     def draw_seat_label(self, x, y, r, name, chips, cy):
         """Draw a black box with white text for player info above or below the seat."""
