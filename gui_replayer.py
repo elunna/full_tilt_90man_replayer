@@ -286,6 +286,9 @@ class HandReplayerGUI:
     def process_action(self, act, contrib):
         """
         Handles a single action, updating pot and contributions.
+        Notes:
+          - Antes add to the pot but do NOT count toward the street contribution.
+          - Blinds (posts) add to both the pot and street contribution.
         """
         action = act['action']
         detail = act.get('detail', '')
@@ -293,11 +296,15 @@ class HandReplayerGUI:
         
         if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
             return
-        if action in ('posts', 'antes'):
-            # Includes blinds and antes
+        if action == 'posts':
+            # Blinds and similar forced posts: count in both pot and street contribution
             amt = self._extract_first_amount(detail)
             self.pot += amt
             contrib[player] = contrib.get(player, 0) + amt
+        elif action == 'antes':
+            # Antes: pot only, excluded from street contribution
+            amt = self._extract_first_amount(detail)
+            self.pot += amt
         elif action == 'bets':
             amt = self._extract_first_amount(detail)
             self.pot += amt
@@ -383,8 +390,13 @@ class HandReplayerGUI:
 
         # Compute and draw current street bet/contribution markers
         if hand and self.current_street is not None and self.current_action_index is not None:
-            contrib = self.compute_street_contrib_upto(hand, self.current_street, self.current_action_index)
-            self.draw_bet_markers(contrib, seat_positions, seat_map, cx, cy)
+            non_ante_contrib, ante_contrib = self.compute_street_contrib_upto(
+                hand, self.current_street, self.current_action_index
+            )
+            # Draw blind/bet/call/raise markers (green)
+            self.draw_bet_markers(non_ante_contrib, seat_positions, seat_map, cx, cy)
+            # Draw ante markers (brown, slightly more center)
+            self.draw_ante_markers(ante_contrib, seat_positions, seat_map, cx, cy)
 
     def draw_cards(self, x, y, cards, seat_y=None, cy=None):
         gap = 7
@@ -459,7 +471,8 @@ class HandReplayerGUI:
         """
         Recompute pot from the start of the hand up to and including the given action index
         on the target street. Handles:
-          - posts (blinds/antes)
+          - posts (blinds) [counted in pot AND street contributions]
+          - antes [counted in pot ONLY, not in street contributions]
           - bets
           - calls
           - raises (using 'raises to' delta based on per-street contribution)
@@ -524,8 +537,13 @@ class HandReplayerGUI:
         """
         Compute per-player contribution for the target street only,
         up to and including target_action_index.
+
+        Returns a tuple: (non_ante_contrib, ante_contrib)
+          - non_ante_contrib: blinds, bets, calls, raises
+          - ante_contrib: antes only
         """
-        contrib = {p['name']: 0 for p in hand['players']}
+        non_ante = {p['name']: 0 for p in hand['players']}
+        antes = {p['name']: 0 for p in hand['players']}
         actions = hand['actions'].get(target_street, [])
         upto = max(0, min(target_action_index + 1, len(actions)))
         for i in range(upto):
@@ -535,25 +553,29 @@ class HandReplayerGUI:
             player = act['player']
             if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
                 continue
-            if action == 'posts' or action == 'antes':
+            if action == 'posts':
                 amt = self._extract_first_amount(detail)
-                contrib[player] = contrib.get(player, 0) + amt
+                non_ante[player] = non_ante.get(player, 0) + amt
+            elif action == 'antes':
+                amt = self._extract_first_amount(detail)
+                antes[player] = antes.get(player, 0) + amt
             elif action == 'bets':
                 amt = self._extract_first_amount(detail)
-                contrib[player] = contrib.get(player, 0) + amt
+                non_ante[player] = non_ante.get(player, 0) + amt
             elif action == 'calls':
                 amt = self._extract_first_amount(detail)
-                contrib[player] = contrib.get(player, 0) + amt
+                non_ante[player] = non_ante.get(player, 0) + amt
             elif action == 'raises':
                 target_total = self._extract_raise_to_amount(detail)
-                prev = contrib.get(player, 0)
+                prev = non_ante.get(player, 0)
                 delta = max(0, target_total - prev)
-                contrib[player] = prev + delta
-        return contrib
+                non_ante[player] = prev + delta
+        return non_ante, antes
 
     def draw_bet_markers(self, contrib_map, seat_positions, seat_map, cx, cy):
         """
         Draw a small chip circle toward the center for each player's current street contribution.
+        Excludes antes.
         """
         # Build name->seat index map for placement
         name_to_seat = {}
@@ -576,6 +598,30 @@ class HandReplayerGUI:
             # Keep the text small to fit typical amounts
             self.table_canvas.create_text(bx, by, text=f"{amount:,}", fill="#000", font=("Arial", 9, "bold"))
 
+    def draw_ante_markers(self, ante_map, seat_positions, seat_map, cx, cy):
+        """
+        Draw ante markers slightly closer to the center, in a brown color.
+        """
+        # Build name->seat index map for placement
+        name_to_seat = {}
+        for seat, pdata in seat_map.items():
+            name_to_seat[pdata['name']] = seat
+
+        for name, amount in ante_map.items():
+            if amount <= 0:
+                continue
+            seat = name_to_seat.get(name)
+            if not seat:
+                continue
+            sx, sy = seat_positions[seat - 1]
+
+            # Slightly closer to the center than bet markers
+            ax, ay = self.get_centerward_position_fraction(sx, sy, cx, cy, fraction=0.38)
+
+            r = 22
+            # Brown fill with dark outline for contrast
+            self.table_canvas.create_oval(ax - r, ay - r, ax + r, ay + r, fill="#a0522d", outline="#3a2415", width=2)
+            self.table_canvas.create_text(ax, ay, text=f"{amount:,}", fill="#fff", font=("Arial", 9, "bold"))
     # ====== UI updates and navigation ======
 
     def update_action_viewer(self):
