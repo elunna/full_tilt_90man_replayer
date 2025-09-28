@@ -236,6 +236,7 @@ class HandReplayerGUI:
         """
         Process posting of antes and blinds using the existing process_action logic.
         Ensure all actions are replayed and displayed correctly upon loading a hand.
+        Stop at the BB post to allow the first player action to be played.
         """
         # Copy the actions to ensure we don't modify the original hand data
         preflop_actions = list(hand['actions'].get('preflop', []))
@@ -249,6 +250,10 @@ class HandReplayerGUI:
             if act['action'] in ('posts', 'antes'):
                 # Replay the action
                 self.process_action(act, self.player_contributions)
+
+                # Check if this is the BB post
+                if "big blind" in act['detail'].lower():
+                    break  # Stop processing at the BB post
 
                 # Update the current action index and display the state
                 self.current_action_index += 1
