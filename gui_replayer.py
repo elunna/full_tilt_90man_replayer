@@ -221,12 +221,81 @@ class HandReplayerGUI:
         self.current_action_index = 0
         self.update_table_canvas()
         self.update_action_viewer()
+
+        # Process antes and blinds at the start of the hand
+        self.process_initial_forced_bets(hand)
+
         self.display_action_history()
         for i, rect_id in enumerate(self.hand_boxes):
             if i == idx:
                 self.hand_selector_canvas.itemconfig(rect_id, width=3, outline="#222")
             else:
                 self.hand_selector_canvas.itemconfig(rect_id, width=1, outline="#333")
+
+    def process_initial_forced_bets(self, hand):
+        """
+        Process posting of antes and blinds using the existing process_action logic.
+        Ensure all actions are replayed and displayed correctly upon loading a hand.
+        """
+        # Copy the actions to ensure we don't modify the original hand data
+        preflop_actions = list(hand['actions'].get('preflop', []))
+
+        # Reset contributions and pot for this hand
+        self.pot = 0
+        self.player_contributions = {p['name']: 0 for p in hand['players']}
+
+        # Process forced bets sequentially
+        for act in preflop_actions:
+            if act['action'] in ('posts', 'antes'):
+                # Replay the action
+                self.process_action(act, self.player_contributions)
+
+                # Update the current action index and display the state
+                self.current_action_index += 1
+                self.update_action_viewer()
+                self.update_table_canvas()
+
+        # Debugging: Log the final state
+        print(f"Pot after forced bets: {self.pot}")
+        print(f"Player contributions: {self.player_contributions}")
+        print(f"Remaining actions: {hand['actions']['preflop']}")
+    def process_action(self, act, contrib):
+        """
+        Handles a single action, updating pot and contributions.
+        """
+        action = act['action']
+        detail = act.get('detail', '')
+        player = act['player']
+        
+        if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
+            return
+        if action in ('posts', 'antes'):
+            # Includes blinds and antes
+            amt = self._extract_first_amount(detail)
+            self.pot += amt
+            contrib[player] = contrib.get(player, 0) + amt
+        elif action == 'bets':
+            amt = self._extract_first_amount(detail)
+            self.pot += amt
+            contrib[player] = contrib.get(player, 0) + amt
+        elif action == 'calls':
+            amt = self._extract_first_amount(detail)
+            self.pot += amt
+            contrib[player] = contrib.get(player, 0) + amt
+        elif action == 'raises':
+            target_total = self._extract_raise_to_amount(detail)
+            prev = contrib.get(player, 0)
+            delta = max(0, target_total - prev)
+            self.pot += delta
+            contrib[player] = prev + delta
+
+    def add_to_pot(self, player, amount):
+        """
+        Updates the pot and player contributions for forced bets.
+        """
+        self.pot = getattr(self, 'pot', 0) + amount
+        self.player_contributions = getattr(self, 'player_contributions', {})
+        self.player_contributions[player] = self.player_contributions.get(player, 0) + amount
 
     def update_table_canvas(self):
         self.table_canvas.delete("all")
