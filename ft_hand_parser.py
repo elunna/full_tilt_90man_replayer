@@ -38,7 +38,7 @@ class FullTiltHandParser:
             'summary': {},
         }
         player_re = re.compile(r"Seat\s+(\d+):\s+(.+?)\s+\(([\d,]+)\)")
-        action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|mucks|wins)(.*)")
+        action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|antes|mucks|wins)(.*)")
         summary_section = False
 
         # Track which street we're in

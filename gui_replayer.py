@@ -382,7 +382,7 @@ class HandReplayerGUI:
             player = act['player']
             if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
                 return
-            if action == 'posts':
+            if action == 'posts' or action == 'antes':
                 # Includes blinds and antes
                 amt = self._extract_first_amount(detail)
                 pot += amt
@@ -442,7 +442,7 @@ class HandReplayerGUI:
             player = act['player']
             if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
                 continue
-            if action == 'posts':
+            if action == 'posts' or action == 'antes':
                 amt = self._extract_first_amount(detail)
                 contrib[player] = contrib.get(player, 0) + amt
             elif action == 'bets':
