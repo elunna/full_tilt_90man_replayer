@@ -475,11 +475,11 @@ class HandReplayerGUI:
                 continue
             sx, sy = seat_positions[seat - 1]
             # Position further toward the center than hole cards
-            bx, by = self.get_centerward_position_fraction(sx, sy, cx, cy, fraction=0.65)
+            bx, by = self.get_centerward_position_fraction(sx, sy, cx, cy, fraction=0.30)
 
             # Draw chip circle and amount
-            r = 14
-            self.table_canvas.create_oval(bx - r, by - r, bx + r, by + r, fill="#f0c040", outline="#222", width=2)
+            r = 25
+            self.table_canvas.create_oval(bx - r, by - r, bx + r, by + r, fill="#70f040", outline="#222", width=2)
             # Keep the text small to fit typical amounts
             self.table_canvas.create_text(bx, by, text=f"{amount:,}", fill="#000", font=("Arial", 9, "bold"))
 
