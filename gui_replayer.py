@@ -1328,46 +1328,65 @@ class HandReplayerGUI:
         self.info_pot_var.set(self._fmt_amount(pot_before))
 
         # Pot odds for current actor (if applicable)
-        actions = hand.get('actions', {}).get(self.current_street, [])
+        actions = hand.get('actions', {}).get(self.current_street, []) or []
         if not actions:
             self.info_pot_odds_var.set(INFO_PLACEHOLDER)
             return
 
-        if not (0 <= (self.current_action_index or 0) < len(actions)):
-            self.info_pot_odds_var.set(INFO_PLACEHOLDER)
-            return
+        # We want pot odds for the NEXT action, based on the state AFTER the current action.
+        # Determine the index representing "now" state (apply current action if any),
+        # and then find the next player to act on this street.
+        cur_idx = self.current_action_index if self.current_action_index is not None else -1
+        if cur_idx >= len(actions):
+            cur_idx = len(actions) - 1
 
-        act = actions[self.current_action_index]
-        actor = act.get('player')
-        if not actor or actor == 'Board':
-            self.info_pot_odds_var.set(INFO_PLACEHOLDER)
-            return
-
+        # Compute pot for next actor (state after current action)
         try:
-            non_ante_contrib, _ = self.compute_street_contrib_upto(hand, self.current_street, prev_idx)
+            pot_for_next = self.compute_pot_upto(hand, self.current_street, max(-1, cur_idx))
         except Exception:
-            non_ante_contrib = {}
+            pot_for_next = pot_before  # fallback to previously computed pot_before
 
-        # Facing call = max street contribution - actor's contribution
+        # Compute street contributions up to and including current index (state after current action)
+        try:
+            contrib_after, _ = self.compute_street_contrib_upto(hand, self.current_street, max(-1, cur_idx))
+        except Exception:
+            contrib_after = {}
+
+        # Find the next player action on this street
+        next_actor = None
+        next_idx = cur_idx + 1
+        while next_idx < len(actions):
+            a = actions[next_idx]
+            p = a.get('player')
+            if p and p != 'Board':
+                next_actor = p
+                break
+            next_idx += 1
+
+        if not next_actor:
+            self.info_pot_odds_var.set(INFO_PLACEHOLDER)
+            return
+
+        # Facing call for next actor = max contribution - that player's contribution
         highest = 0
-        if non_ante_contrib:
+        if contrib_after:
             try:
-                highest = max(non_ante_contrib.values())
+                highest = max(contrib_after.values())
             except Exception:
                 highest = 0
-        actor_paid = non_ante_contrib.get(actor, 0)
+        actor_paid = contrib_after.get(next_actor, 0)
         to_call = max(0, highest - actor_paid)
 
         if to_call > 0:
-            # Break-even equity: to_call / (pot_before + to_call)
-            denom = pot_before + to_call
+            # Break-even equity: to_call / (pot_for_next + to_call)
+            denom = pot_for_next + to_call
             odds = (to_call / denom) if denom > 0 else 0.0
             pct = f"{(odds * 100):.1f}%"
-            # Offer ratio as pot:call -> x-to-1, i.e., pot_before / to_call
-            ratio = (pot_before / to_call) if to_call > 0 else 0.0
+            # Offer ratio as pot:call -> x-to-1, i.e., pot_for_next / to_call
+            ratio = (pot_for_next / to_call) if to_call > 0 else 0.0
             ratio_str = f"{ratio:.1f}-to-1"
             # Display format: (Player) x-to-1 [y%]
-            self.info_pot_odds_var.set(f"({actor}) {ratio_str} [{pct}]")
+            self.info_pot_odds_var.set(f"({next_actor}) {ratio_str} [{pct}]")
         else:
             # No call required -> N/A
             self.info_pot_odds_var.set("N/A")
