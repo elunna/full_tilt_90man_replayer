@@ -659,6 +659,19 @@ class HandReplayerGUI:
         hand = self.hands[self.current_hand_index] if self.hands and self.current_hand_index is not None else None
         seat_map = {p['seat']: p for p in hand['players']} if hand else {}
 
+        # Compute live chip stacks up to the current action, so seat chip counts reflect
+        # bets/calls/raises/blinds/antes and winnings, both when stepping forward and back.
+        stacks_map = {p['name']: p.get('chips', 0) for p in hand['players']} if hand else {}
+        if hand and self.current_street is not None and self.current_action_index is not None:
+            try:
+                stacks_map = self.compute_stacks_upto(
+                    hand,
+                    self.current_street,
+                    self.current_action_index
+                )
+            except Exception:
+                pass
+
         flash = self.seat_action_flash  # e.g., {'name': 'Player1', 'text': 'BET'}
         for seat in range(1, SEATS + 1):
             x, y = seat_positions[seat - 1]
@@ -683,7 +696,8 @@ class HandReplayerGUI:
                     if player['name'] in self.sitting_out_players:
                         chip_display = "sitting out"
                     else:
-                        chip_display = player['chips']
+                        # Dynamic, up-to-now stack for this player
+                        chip_display = stacks_map.get(player['name'], player.get('chips', 0))
 
                     self.draw_seat_label(x, y, r, player['name'], chip_display, cy)
 
@@ -1076,6 +1090,87 @@ class HandReplayerGUI:
                     process_action(act, street_contrib)
 
         return pot
+
+    def compute_stacks_upto(self, hand, target_street: str, target_action_index: int):
+        """
+        Recompute each player's chip stack from the start of the hand up to and including
+        the given action index on the target street.
+        Rules:
+          - Start from the 'chips' value in the Seat lines for this hand.
+          - Subtract for money put in the pot:
+              posts (blinds), antes, bets, calls, and the delta of 'raises to'.
+          - Add for money taken from the pot: 'wins' and 'collected'.
+          - For 'raises to', use per-street non-ante contribution to derive the delta.
+        Returns: dict {player_name: live_stack}
+        """
+        # Initialize stacks from hand's seat info
+        stacks = {p['name']: int(p.get('chips', 0)) for p in hand.get('players', [])}
+        streets = ['preflop', 'flop', 'turn', 'river']
+
+        def sub_from_stack(name: str, amt: int):
+            if not name or name == 'Board' or amt <= 0:
+                return
+            stacks[name] = stacks.get(name, 0) - amt
+
+        def add_to_stack(name: str, amt: int):
+            if not name or name == 'Board' or amt <= 0:
+                return
+            stacks[name] = stacks.get(name, 0) + amt
+
+        for s in streets:
+            actions = hand.get('actions', {}).get(s, []) or []
+            if not actions:
+                if s == target_street:
+                    break
+                continue
+
+            # Track per-street non-ante contribution for 'raises to' delta semantics
+            street_non_ante = {p['name']: 0 for p in hand.get('players', [])}
+
+            if s == target_street:
+                upto = max(0, min((target_action_index or 0) + 1, len(actions)))
+                rng = range(upto)
+            else:
+                rng = range(len(actions))
+
+            for i in rng:
+                act = actions[i]
+                action = (act.get('action') or '').lower()
+                player = act.get('player')
+                detail = act.get('detail', '') or ''
+
+                if action in ('checks', 'folds', 'shows', 'mucks', 'is sitting out', 'has returned'):
+                    continue
+
+                if action == 'posts':
+                    amt = self._extract_first_amount(detail)
+                    sub_from_stack(player, amt)
+                    street_non_ante[player] = street_non_ante.get(player, 0) + amt
+                elif action == 'antes':
+                    amt = self._extract_first_amount(detail)
+                    sub_from_stack(player, amt)  # antes do reduce stack
+                elif action == 'bets':
+                    amt = self._extract_first_amount(detail)
+                    sub_from_stack(player, amt)
+                    street_non_ante[player] = street_non_ante.get(player, 0) + amt
+                elif action == 'calls':
+                    amt = self._extract_first_amount(detail)
+                    sub_from_stack(player, amt)
+                    street_non_ante[player] = street_non_ante.get(player, 0) + amt
+                elif action == 'raises':
+                    target_total = self._extract_raise_to_amount(detail)
+                    prev = street_non_ante.get(player, 0)
+                    delta = max(0, target_total - prev)
+                    sub_from_stack(player, delta)
+                    street_non_ante[player] = prev + delta
+                elif action in ('wins', 'collected'):
+                    amt = self._extract_first_amount(detail)
+                    add_to_stack(player, amt)
+
+            if s == target_street:
+                break
+
+        return stacks
 
     def compute_street_contrib_upto(self, hand, target_street: str, target_action_index: int):
         """
