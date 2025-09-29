@@ -453,13 +453,7 @@ class HandReplayerGUI:
             player = seat_map.get(seat)
             if player:
                 is_folded = player['name'] in self.folded_players
-                color = "#bbb" if is_folded else "#ffd700"
-                self.table_canvas.create_oval(
-                    x - r, y - r, x + r, y + r,
-                    fill=color, outline="#222", width=2
-                )
-
-                # Draw player name and chips in a black box with white text
+                # Draw player name and chips in a black rectangle centered at the seat position
                 self.draw_seat_label(x, y, r, player['name'], player['chips'], cy)
 
                 if not is_folded:
@@ -468,10 +462,7 @@ class HandReplayerGUI:
                     cards = self.player_cards.get(player['name'], ['??', '??'])
                     self.draw_cards(card_x, card_y, cards, y, cy)
             else:
-                self.table_canvas.create_oval(
-                    x - r, y - r, x + r, y + r,
-                    fill="#444", outline="#222", width=2
-                )
+                # No seat circle; just indicate empty at the seat position
                 self.table_canvas.create_text(x, y, text="(empty)", font=("Arial", 9))
 
         # Pot area (move down a bit to make room for community cards above)
@@ -563,18 +554,16 @@ class HandReplayerGUI:
             draw_one(front_left, front_top, code if code != "" else "??")
 
     def draw_seat_label(self, x, y, r, name, chips, cy):
-        """Draw a black box with white text for player info above or below the seat."""
-        is_bottom = y > cy
-        anchor = 'n' if is_bottom else 's'
-        margin = 8
+        """Draw a black box with white text for player info centered at the seat position."""
+        anchor = 'center'
         pad_x = 6
         pad_y = 4
 
         label_text = f"{name}\n${chips}"
         tx = x
-        ty = y + r + margin if is_bottom else y - r - margin
+        ty = y
 
-        # Create the text first to measure bbox, then draw a rectangle behind it.
+        # Create the text first (centered) to measure bbox, then draw a rectangle behind it.
         text_id = self.table_canvas.create_text(
             tx, ty, text=label_text, font=("Arial", 11), fill="white", anchor=anchor
         )
