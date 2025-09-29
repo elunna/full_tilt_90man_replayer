@@ -1308,10 +1308,15 @@ class HandReplayerGUI:
         to_call = max(0, highest - actor_paid)
 
         if to_call > 0:
+            # Break-even equity: to_call / (pot_before + to_call)
             denom = pot_before + to_call
             odds = (to_call / denom) if denom > 0 else 0.0
             pct = f"{(odds * 100):.1f}%"
-            self.info_pot_odds_var.set(f"{pct} (to call {self._fmt_amount(to_call)})")
+            # Offer ratio as pot:call -> x-to-1, i.e., pot_before / to_call
+            ratio = (pot_before / to_call) if to_call > 0 else 0.0
+            ratio_str = f"{ratio:.1f}-to-1"
+            # Display format: (Player) x-to-1 [y%]
+            self.info_pot_odds_var.set(f"({actor}) {ratio_str} [{pct}]")
         else:
             # No call required -> N/A
             self.info_pot_odds_var.set("N/A")
