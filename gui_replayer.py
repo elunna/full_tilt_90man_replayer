@@ -205,8 +205,23 @@ class HandReplayerGUI:
         # Hand playback display (right side, pushed down by Info)
         action_info_label = tk.Label(right_frame, text="Hand Playback")
         action_info_label.pack(pady=(6,0))
-        self.action_info_text = tk.Text(right_frame, height=30, width=48, wrap='word', state='disabled', bg="#f6f6f6", font=("Consolas", 11))
-        self.action_info_text.pack(fill='both', padx=10, pady=(0,10), expand=True)
+        # Scrollable Hand Playback area; reduce height so Info + Session panels remain visible
+        playback_container = tk.Frame(right_frame)
+        playback_container.pack(fill='both', padx=10, pady=(0,10), expand=True)
+        playback_scroll = tk.Scrollbar(playback_container, orient='vertical')
+        playback_scroll.pack(side='right', fill='y')
+        self.action_info_text = tk.Text(
+            playback_container,
+            height=14,  # reduced from 30 to avoid pushing panels off-screen
+            width=48,
+            wrap='word',
+            state='disabled',
+            bg="#f6f6f6",
+            font=("Consolas", 11),
+            yscrollcommand=playback_scroll.set
+        )
+        self.action_info_text.pack(side='left', fill='both', expand=True)
+        playback_scroll.config(command=self.action_info_text.yview)
 
         # Bottom bar: hand selector and controls
         bottom_frame = tk.Frame(self.root)
