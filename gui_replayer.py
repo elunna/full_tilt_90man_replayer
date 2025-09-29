@@ -32,6 +32,7 @@ DEALER_BTN_RADIUS = 30
 DEALER_BTN_MARGIN = 6
 # Action flash overlay duration (milliseconds)
 ACTION_FLASH_MS = 1000
+INFO_PLACEHOLDER = "—"
 
 def get_hero_result(hand, hero=None):
     vpip = False
@@ -69,6 +70,12 @@ class HandReplayerGUI:
         self.current_action_index = None
         self.folded_players = set()
         self.player_cards = {}
+
+        # Info panel state
+        self.info_blinds_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.info_ante_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.info_pot_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.info_pot_odds_var = tk.StringVar(value=INFO_PLACEHOLDER)
 
         # Transient per-seat action overlay state:
         # {'name': <player_name>, 'text': <overlay_text>}
@@ -151,9 +158,24 @@ class HandReplayerGUI:
         self.table_canvas.pack(fill='both', expand=True)
         self.table_canvas.bind('<Configure>', self.on_canvas_resize)
 
-        # Hand playback/info display (right side, fills right)
+        # Info panel (top of right side)
+        info_title = tk.Label(right_frame, text="Info")
+        info_title.pack(pady=(10, 0))
+        info_frame = tk.Frame(right_frame)
+        info_frame.pack(fill='x', padx=10, pady=(0, 6))
+        # Rows: Blinds, Ante, Pot, Pot odds
+        tk.Label(info_frame, text="Blinds:").grid(row=0, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_blinds_var).grid(row=0, column=1, sticky="w")
+        tk.Label(info_frame, text="Ante:").grid(row=1, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_ante_var).grid(row=1, column=1, sticky="w")
+        tk.Label(info_frame, text="Pot:").grid(row=2, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_pot_var).grid(row=2, column=1, sticky="w")
+        tk.Label(info_frame, text="Pot odds:").grid(row=3, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_pot_odds_var).grid(row=3, column=1, sticky="w")
+
+        # Hand playback display (right side, pushed down by Info)
         action_info_label = tk.Label(right_frame, text="Hand Playback")
-        action_info_label.pack(pady=(10,0))
+        action_info_label.pack(pady=(6,0))
         self.action_info_text = tk.Text(right_frame, height=30, width=48, wrap='word', state='disabled', bg="#f6f6f6", font=("Consolas", 11))
         self.action_info_text.pack(fill='both', padx=10, pady=(0,10), expand=True)
 
@@ -1094,6 +1116,8 @@ class HandReplayerGUI:
         # Refresh table to update pot and bet markers
         self.update_table_canvas()
         self.display_action_history()
+        # Update info panel (blinds/ante/pot/pot odds)
+        self.update_info_panel()
 
     def display_action_history(self):
         if not self.hands or self.current_hand_index is None:
@@ -1171,6 +1195,110 @@ class HandReplayerGUI:
                 pass
             self._seat_action_flash_after = None
         self.update_table_canvas()
+
+    # ====== Info panel helpers ======
+    def _fmt_amount(self, amt):
+        try:
+            return f"${amt:,}"
+        except Exception:
+            return f"${amt}"
+
+    def _extract_blinds_antes(self, hand):
+        """
+        Derive small/big blinds and ante amounts from preflop actions.
+        Returns (sb, bb, ante) as ints or None if not seen.
+        """
+        sb = bb = ante = None
+        for act in hand.get('actions', {}).get('preflop', []):
+            action = act.get('action')
+            detail = (act.get('detail') or "").lower()
+            if action == 'posts':
+                if sb is None and 'small blind' in detail:
+                    sb = self._extract_first_amount(detail)
+                elif bb is None and 'big blind' in detail:
+                    bb = self._extract_first_amount(detail)
+            elif action == 'antes':
+                # Tournament antes are typically uniform; take first seen
+                if ante is None:
+                    ante = self._extract_first_amount(detail)
+        return sb, bb, ante
+
+    def update_info_panel(self):
+        """
+        Populate Info panel:
+          - Blinds: SB/BB
+          - Ante
+          - Pot: pot before the current action
+          - Pot odds: for the current actor (to call amount / (pot + to call))
+        """
+        # Defaults
+        self.info_blinds_var.set(INFO_PLACEHOLDER)
+        self.info_ante_var.set(INFO_PLACEHOLDER)
+        self.info_pot_var.set(INFO_PLACEHOLDER)
+        self.info_pot_odds_var.set(INFO_PLACEHOLDER)
+
+        if not self.hands or self.current_hand_index is None or self.current_street is None:
+            return
+        hand = self.hands[self.current_hand_index]
+
+        # Blinds / Ante
+        sb, bb, ante = self._extract_blinds_antes(hand)
+        blinds_text = INFO_PLACEHOLDER
+        if sb is not None or bb is not None:
+            left = self._fmt_amount(sb) if sb is not None else "?"
+            right = self._fmt_amount(bb) if bb is not None else "?"
+            blinds_text = f"{left}/{right}"
+        self.info_blinds_var.set(blinds_text)
+        self.info_ante_var.set(self._fmt_amount(ante) if ante is not None else INFO_PLACEHOLDER)
+
+        # Pot before current action index
+        # Use previous action index so the pot reflects the state the actor is facing
+        prev_idx = max(-1, (self.current_action_index or 0) - 1)
+        try:
+            pot_before = self.compute_pot_upto(hand, self.current_street, prev_idx)
+        except Exception:
+            pot_before = 0
+        self.info_pot_var.set(self._fmt_amount(pot_before))
+
+        # Pot odds for current actor (if applicable)
+        actions = hand.get('actions', {}).get(self.current_street, [])
+        if not actions:
+            self.info_pot_odds_var.set(INFO_PLACEHOLDER)
+            return
+
+        if not (0 <= (self.current_action_index or 0) < len(actions)):
+            self.info_pot_odds_var.set(INFO_PLACEHOLDER)
+            return
+
+        act = actions[self.current_action_index]
+        actor = act.get('player')
+        if not actor or actor == 'Board':
+            self.info_pot_odds_var.set(INFO_PLACEHOLDER)
+            return
+
+        try:
+            non_ante_contrib, _ = self.compute_street_contrib_upto(hand, self.current_street, prev_idx)
+        except Exception:
+            non_ante_contrib = {}
+
+        # Facing call = max street contribution - actor's contribution
+        highest = 0
+        if non_ante_contrib:
+            try:
+                highest = max(non_ante_contrib.values())
+            except Exception:
+                highest = 0
+        actor_paid = non_ante_contrib.get(actor, 0)
+        to_call = max(0, highest - actor_paid)
+
+        if to_call > 0:
+            denom = pot_before + to_call
+            odds = (to_call / denom) if denom > 0 else 0.0
+            pct = f"{(odds * 100):.1f}%"
+            self.info_pot_odds_var.set(f"{pct} (to call {self._fmt_amount(to_call)})")
+        else:
+            # No call required -> N/A
+            self.info_pot_odds_var.set("N/A")
 
     def has_next_action(self):
         hand = self.hands[self.current_hand_index]
