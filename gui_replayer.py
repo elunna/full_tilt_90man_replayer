@@ -78,7 +78,9 @@ class HandReplayerGUI:
         self.info_ante_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_bounty_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.info_handno_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_odds_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.info_pot_odds_player_var = tk.StringVar(value=INFO_PLACEHOLDER)
         # Session/tournament-wide info panel state
         self.session_room_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.session_game_var = tk.StringVar(value=INFO_PLACEHOLDER)
@@ -174,33 +176,53 @@ class HandReplayerGUI:
         info_title.pack(pady=(10, 0))
         info_frame = tk.Frame(right_frame)
         info_frame.pack(fill='x', padx=10, pady=(0, 6))
-        # Rows: Blinds, Ante, Pot, Pot odds
-        tk.Label(info_frame, text="Blinds:").grid(row=0, column=0, sticky="w")
-        tk.Label(info_frame, textvariable=self.info_blinds_var).grid(row=0, column=1, sticky="w")
-        tk.Label(info_frame, text="Ante:").grid(row=1, column=0, sticky="w")
-        tk.Label(info_frame, textvariable=self.info_ante_var).grid(row=1, column=1, sticky="w")
+        # Rows: Hand #, (Blinds + Ante on same row), Pot, Pot odds
+        # Make column 1 expandable so right-side fields can align to the right.
+        try:
+            info_frame.columnconfigure(1, weight=1)
+            # Optional: keep rightmost column fixed
+            info_frame.columnconfigure(3, weight=0)
+        except Exception:
+            pass
+        # Hand number (tournament index, starting from 1)
+        tk.Label(info_frame, text="Hand:").grid(row=0, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_handno_var).grid(row=0, column=1, sticky="w")
+        # Blinds + Ante on same row
+        tk.Label(info_frame, text="Blinds:").grid(row=1, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_blinds_var).grid(row=1, column=1, sticky="w")
+        # Ante moved to same row, aligned to the right side of the panel
+        tk.Label(info_frame, text="Ante:").grid(row=1, column=2, sticky="e")
+        tk.Label(info_frame, textvariable=self.info_ante_var).grid(row=1, column=3, sticky="e")
+        # Remaining rows
         tk.Label(info_frame, text="Pot:").grid(row=2, column=0, sticky="w")
         tk.Label(info_frame, textvariable=self.info_pot_var).grid(row=2, column=1, sticky="w")
         tk.Label(info_frame, text="Pot odds:").grid(row=3, column=0, sticky="w")
         tk.Label(info_frame, textvariable=self.info_pot_odds_var).grid(row=3, column=1, sticky="w")
+        # Player name for pot odds, aligned right on the same line
+        self.pot_odds_player_label = tk.Label(info_frame, textvariable=self.info_pot_odds_player_var)
+        self.pot_odds_player_label.grid(row=3, column=3, sticky="e")
 
         # Session/Tournament panel (room/game/date/hand/table/bounty)
         session_title = tk.Label(right_frame, text="Session")
         session_title.pack(pady=(6, 0))
         session_frame = tk.Frame(right_frame)
         session_frame.pack(fill='x', padx=10, pady=(0, 6))
+        # Allow right-aligned fields on same row by expanding column 1
+        try:
+            session_frame.columnconfigure(1, weight=1)
+            session_frame.columnconfigure(3, weight=0)
+        except Exception:
+            pass
+        # Row 0: Room (left) and Game (right on same line)
         tk.Label(session_frame, text="Room:").grid(row=0, column=0, sticky="w")
         tk.Label(session_frame, textvariable=self.session_room_var).grid(row=0, column=1, sticky="w")
-        tk.Label(session_frame, text="Game:").grid(row=1, column=0, sticky="w")
-        tk.Label(session_frame, textvariable=self.session_game_var).grid(row=1, column=1, sticky="w")
-        tk.Label(session_frame, text="Date:").grid(row=2, column=0, sticky="w")
-        tk.Label(session_frame, textvariable=self.session_date_var).grid(row=2, column=1, sticky="w")
-        tk.Label(session_frame, text="Hand #:").grid(row=3, column=0, sticky="w")
-        tk.Label(session_frame, textvariable=self.session_hand_var).grid(row=3, column=1, sticky="w")
-        tk.Label(session_frame, text="Table #:").grid(row=4, column=0, sticky="w")
-        tk.Label(session_frame, textvariable=self.session_table_var).grid(row=4, column=1, sticky="w")
-        tk.Label(session_frame, text="Bounty:").grid(row=5, column=0, sticky="w")
-        tk.Label(session_frame, textvariable=self.info_bounty_var).grid(row=5, column=1, sticky="w")
+        tk.Label(session_frame, text="Game:").grid(row=0, column=2, sticky="e")
+        tk.Label(session_frame, textvariable=self.session_game_var).grid(row=0, column=3, sticky="e")
+        # Remaining rows (remove Hand # and Table #; move Bounty up)
+        tk.Label(session_frame, text="Date:").grid(row=1, column=0, sticky="w")
+        tk.Label(session_frame, textvariable=self.session_date_var).grid(row=1, column=1, sticky="w")
+        tk.Label(session_frame, text="Bounty:").grid(row=2, column=0, sticky="w")
+        tk.Label(session_frame, textvariable=self.info_bounty_var).grid(row=2, column=1, sticky="w")
 
         # Hand playback display (right side, pushed down by Info)
         action_info_label = tk.Label(right_frame, text="Hand Playback")
@@ -1749,19 +1771,25 @@ class HandReplayerGUI:
         Populate Info panel:
           - Blinds: SB/BB
           - Ante
+          - Hand number (tournament index)
           - Pot: pot before the current action
           - Pot odds: for the current actor (to call amount / (pot + to call))
         """
         # Defaults
+        self.info_handno_var.set(INFO_PLACEHOLDER)
         self.info_blinds_var.set(INFO_PLACEHOLDER)
         self.info_ante_var.set(INFO_PLACEHOLDER)
         self.info_pot_var.set(INFO_PLACEHOLDER)
         self.info_pot_odds_var.set(INFO_PLACEHOLDER)
+        self.info_pot_odds_player_var.set("")
 
         if not self.hands or self.current_hand_index is None or self.current_street is None:
+            # nothing to display
             return
         hand = self.hands[self.current_hand_index]
 
+        # Hand number (current index + 1)
+        self.info_handno_var.set(str(self.current_hand_index + 1))
         # Blinds / Ante
         sb, bb, ante = self._extract_blinds_antes(hand)
         blinds_text = INFO_PLACEHOLDER
@@ -1802,6 +1830,7 @@ class HandReplayerGUI:
         actions = hand.get('actions', {}).get(self.current_street, []) or []
         if not actions:
             self.info_pot_odds_var.set(INFO_PLACEHOLDER)
+            self.info_pot_odds_player_var.set("")
             return
 
         # We want pot odds for the NEXT action, based on the state AFTER the current action.
@@ -1836,6 +1865,7 @@ class HandReplayerGUI:
 
         if not next_actor:
             self.info_pot_odds_var.set(INFO_PLACEHOLDER)
+            self.info_pot_odds_player_var.set("")
             return
 
         # Facing call for next actor = max contribution - that player's contribution
@@ -1856,11 +1886,15 @@ class HandReplayerGUI:
             # Offer ratio as pot:call -> x-to-1, i.e., pot_for_next / to_call
             ratio = (pot_for_next / to_call) if to_call > 0 else 0.0
             ratio_str = f"{ratio:.1f}-to-1"
-            # Display format: (Player) x-to-1 [y%]
-            self.info_pot_odds_var.set(f"({next_actor}) {ratio_str} [{pct}]")
+            # Display format split across columns:
+            #   col1: "x-to-1 [y%]" (left)
+            #   col3: player name (right)
+            self.info_pot_odds_var.set(f"{ratio_str} [{pct}]")
+            self.info_pot_odds_player_var.set(next_actor)
         else:
             # No call required -> N/A
             self.info_pot_odds_var.set("N/A")
+            self.info_pot_odds_player_var.set("")
 
     def _extract_session_info(self, header: str):
         """
