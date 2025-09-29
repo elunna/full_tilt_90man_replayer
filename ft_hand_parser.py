@@ -62,6 +62,7 @@ class FullTiltHandParser:
         player_re = re.compile(r"Seat\s+(\d+):\s+(.+?)\s+\(([\d,]+)\)")
         action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|antes|mucks|wins|is sitting out|has returned)(.*)")
         button_re = re.compile(r"The button is in seat #(\d+)", re.IGNORECASE)
+        uncalled_re = re.compile(r"^Uncalled\s+bet\s+of\s+([\d,]+)\s+returned\s+to\s+(.+)$", re.IGNORECASE)
         summary_section = False
 
         # Track which street we're in
@@ -157,6 +158,18 @@ class FullTiltHandParser:
                 if ':' in line:
                     k, v = line.split(':', 1)
                     hand_info['summary'][k.strip()] = v.strip()
+            elif uncalled_re.match(line):
+                # Example: "Uncalled bet of 445 returned to joehiro"
+                m = uncalled_re.match(line)
+                if m:
+                    amt = m.group(1).strip()
+                    to_name = m.group(2).strip().rstrip('.')
+                    # Record as an 'uncalled' action on the current street.
+                    # Set player as the recipient to simplify downstream handling.
+                    hand_info['actions'][current_street].append({
+                        'player': to_name,
+                        'action': 'uncalled',
+                        'detail': f"Uncalled bet of {amt} returned to {to_name}"})
             elif action_re.match(line):
                 m = action_re.match(line)
                 if m:

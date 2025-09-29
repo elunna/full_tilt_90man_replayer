@@ -1125,6 +1125,20 @@ class HandReplayerGUI:
         # Fallback
         return self._extract_first_amount(text)
 
+    def _extract_returned_to_name(self, detail: str):
+        """
+        For 'uncalled' actions, extract the recipient's name from patterns like:
+          'Uncalled bet of 445 returned to joehiro'
+        Returns the extracted name (str) or None if not present.
+        """
+        if not detail:
+            return None
+        m = re.search(r"returned\s+to\s+(.+)$", detail, flags=re.IGNORECASE)
+        if not m:
+            return None
+        name = m.group(1).strip()
+        name = re.sub(r"[.\s]+$", "", name)  # trim trailing punctuation/whitespace
+        return name
     def compute_pot_upto(self, hand, target_street: str, target_action_index: int) -> int:
         """
         Recompute pot from the start of the hand up to and including the given action index
@@ -1146,6 +1160,7 @@ class HandReplayerGUI:
             player = act['player']
             if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins', 'is sitting out', 'has returned'):
                 return
+            # Money-adding actions
             if action == 'posts' or action == 'antes':
                 # Includes blinds and antes
                 amt = self._extract_first_amount(detail)
@@ -1166,8 +1181,19 @@ class HandReplayerGUI:
                 pot += delta
                 contrib[player] = prev + delta
             else:
-                # Any other money-adding verbs can be added here if they appear
-                pass
+                # Money-returning action(s)
+                if action == 'uncalled':
+                    # Return chips to the bettor: subtract from pot and reduce that player's street contrib
+                    amt = self._extract_first_amount(detail)
+                    pot -= amt
+                    # Determine recipient (use explicit player if present; else parse from detail)
+                    recipient = player or self._extract_returned_to_name(detail)
+                    if recipient:
+                        prev = contrib.get(recipient, 0)
+                        contrib[recipient] = max(0, prev - amt)
+                else:
+                    # Any other verbs can be added here if they appear
+                    pass
 
         for s in streets:
             # Reset per-street contributions (for correct 'raises to' semantics)
@@ -1200,6 +1226,7 @@ class HandReplayerGUI:
           - Subtract for money put in the pot:
               posts (blinds), antes, bets, calls, and the delta of 'raises to'.
           - Add for money taken from the pot: 'wins' and 'collected'.
+          - Return for uncalled bets: 'uncalled' adds back to stack and reduces that street's contrib.
           - For 'raises to', use per-street non-ante contribution to derive the delta.
         Returns: dict {player_name: live_stack}
         """
@@ -1266,7 +1293,16 @@ class HandReplayerGUI:
                 elif action in ('wins', 'collected'):
                     amt = self._extract_first_amount(detail)
                     add_to_stack(player, amt)
-
+                elif action == 'uncalled':
+                    # Return the uncalled portion to the bettor and reduce their displayed contribution
+                    amt = self._extract_first_amount(detail)
+                    # Determine recipient (bettor)
+                    recipient = player or self._extract_returned_to_name(detail)
+                    if recipient:
+                        add_to_stack(recipient, amt)
+                        prev = street_non_ante.get(recipient, 0)
+                        street_non_ante[recipient] = max(0, prev - amt)
+                        
             if s == target_street:
                 break
 
@@ -1309,6 +1345,12 @@ class HandReplayerGUI:
                 prev = non_ante.get(player, 0)
                 delta = max(0, target_total - prev)
                 non_ante[player] = prev + delta
+            elif action == 'uncalled':
+                # Reduce the bettor's displayed street contribution by the uncalled amount
+                amt = self._extract_first_amount(detail)
+                name = player or self._extract_returned_to_name(detail)
+                if name:
+                    non_ante[name] = max(0, non_ante.get(name, 0) - amt)
         return non_ante, antes
 
     def has_showdown_upto(self, hand, target_street: str, target_action_index: int) -> bool:
