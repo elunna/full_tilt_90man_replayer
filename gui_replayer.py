@@ -40,23 +40,23 @@ def get_hero_result(hand, hero=None):
     # Scan all actions for hero wins or ties
     for street in ['preflop', 'flop', 'turn', 'river']:
         for act in hand['actions'][street]:
-            if act['player'] != hero:
+            if act.get('player') != hero:
                 continue
-            # Win
-            if act['action'] == 'wins':
+            action = (act.get('action') or '').lower()
+            detail = (act.get('detail') or '').lower()
+            # Win (handle both 'wins' and 'collected')
+            if action in ('wins', 'collected'):
                 return 1
-            # Split pot detection
-            if act['player'] == hero and (
-                'ties for the side pot' in act.get('detail', '') or
-                'ties for the pot' in act.get('detail', '') or
-                act['action'].startswith('ties for')
-            ):
+            # Split pot detection (various phrasings)
+            if action.startswith('ties for') or 'ties for the pot' in detail or 'ties for the side pot' in detail:
                 return 1
             # Check VPIP
-            if act['action'] in ('bets', 'calls', 'raises'):
+            if action in ('bets', 'calls', 'raises'):
                 vpip = True
-                break
-    return -1 if vpip else 0;
+                # Don't return yet; hero might still win later on another street
+                # Break inner loop to move to the next street
+                #break
+    return -1 if vpip else 0
 
 class HandReplayerGUI:
     def __init__(self, root):
@@ -507,8 +507,8 @@ class HandReplayerGUI:
         gap = 4
         y = 3
         for i, hand in enumerate(self.hands):
-            hero = self.heroes[i] if i < len(self.heroes) else None
-            result = get_hero_result(hand, self.hands[self.current_hand_index]['hero'])
+            hero = self.heroes[i] if i < len(self.heroes) else (hand.get('hero') if hand else None)
+            result = get_hero_result(hand, hero)
             color = "#a9a9a9"
             if result > 0:
                 color = "#66cc66"
