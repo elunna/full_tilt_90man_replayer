@@ -28,6 +28,8 @@ SEAT_BOX_HEIGHT = 108
 SEAT_BORDER_RADIUS = 16
 SEAT_BORDER_COLOR = "#808080"
 SEAT_BORDER_WIDTH = 6
+DEALER_BTN_RADIUS = 30
+DEALER_BTN_MARGIN = 7
 
 def get_hero_result(hand, hero=None):
     vpip = False
@@ -512,6 +514,12 @@ class HandReplayerGUI:
                 # Draw an empty seat rectangle (no text) so all seats are visible by default
                 self.draw_empty_seat(x, y)
 
+            # Draw dealer button if this seat holds the button for the current hand
+            if hand and hand.get('button_seat') == seat:
+                # Place the dealer disc slightly toward the table center from the seat
+                # so it sits visually "next to" the player box without clipping.
+                self.draw_dealer_button(x, y, cx, cy)
+
         # Pot area (move down a bit to make room for community cards above)
         pot_radius = int(min(table_a, table_b) * 0.25)
         pot_offset_y = int(min(table_a, table_b) * 0.18)  # push pot down relative to table size
@@ -679,6 +687,26 @@ class HandReplayerGUI:
             fill="",
             outline=SEAT_BORDER_COLOR,
             width=SEAT_BORDER_WIDTH
+        )
+
+    def draw_dealer_button(self, seat_x, seat_y, cx, cy, radius=DEALER_BTN_RADIUS):
+        """
+        Draw a small white dealer button with a capital 'D' near the given seat position.
+        Positioned slightly toward the table center so it doesn't clip outside the table.
+        """
+        # Position fraction toward center; smaller fraction keeps it close to the seat
+        bx, by = self.get_centerward_position_fraction(seat_x, seat_y, cx, cy, fraction=0.18)
+        r = int(radius)
+        # White disc with dark outline
+        self.table_canvas.create_oval(
+            bx - r, by - r, bx + r, by + r,
+            fill="#ffffff", outline="#222222", width=2
+        )
+        # 'D' label centered on the disc
+        self.table_canvas.create_text(
+            bx, by,
+            text="D", fill="#000000",
+            font=("Arial", 12, "bold")
         )
 
     def draw_rounded_rect(self, x1, y1, x2, y2, radius=12, fill="", outline="", width=1):

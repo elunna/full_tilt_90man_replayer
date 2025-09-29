@@ -28,6 +28,7 @@ class FullTiltHandParser:
     def parse_hand(self, lines: List[str]) -> Dict[str, Any]:
         hand_info = {
             'header': lines[0] if lines else "",
+            'button_seat': None,
             'players': [],
             'actions': {
                 'preflop': [],
@@ -42,6 +43,7 @@ class FullTiltHandParser:
         }
         player_re = re.compile(r"Seat\s+(\d+):\s+(.+?)\s+\(([\d,]+)\)")
         action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|antes|mucks|wins)(.*)")
+        button_re = re.compile(r"The button is in seat #(\d+)", re.IGNORECASE)
         summary_section = False
 
         # Track which street we're in
@@ -57,6 +59,12 @@ class FullTiltHandParser:
         hole_cards_section = False
 
         for line in lines[1:]:
+            # Dealer button seat (e.g., "The button is in seat #7")
+            m_btn = button_re.search(line)
+            if m_btn:
+                hand_info['button_seat'] = int(m_btn.group(1))
+                continue
+
             if line.startswith(street_markers['flop']):
                 # Example: "*** FLOP *** [Ah Kd 7h]"
                 current_street = 'flop'
