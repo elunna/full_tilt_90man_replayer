@@ -212,6 +212,13 @@ class HandReplayerGUI:
         except AttributeError:
             self.info_spr_var = tk.StringVar(value=INFO_PLACEHOLDER)
         tk.Label(info_frame, textvariable=self.info_spr_var).grid(row=5, column=1, sticky="w")
+        # PTS (Pot-to-Stack %) — for Hero only, aligned right of SPR
+        tk.Label(info_frame, text="PTS:").grid(row=5, column=2, sticky="e")
+        try:
+            self.info_pts_var
+        except AttributeError:
+            self.info_pts_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        tk.Label(info_frame, textvariable=self.info_pts_var).grid(row=5, column=3, sticky="e")
 
         # Session/Tournament panel (room/game/date/hand/table/bounty)
         session_title = tk.Label(right_frame, text="Session")
@@ -1984,6 +1991,7 @@ class HandReplayerGUI:
         self.info_truebb_var.set(INFO_PLACEHOLDER)
         self.info_pot_odds_var.set(INFO_PLACEHOLDER)
         self.info_pot_odds_player_var.set("")
+        self.info_pts_var.set(INFO_PLACEHOLDER)
 
         if not self.hands or self.current_hand_index is None or self.current_street is None:
             # nothing to display
@@ -2208,13 +2216,29 @@ class HandReplayerGUI:
                 hero = _detect_hero_name(h)
                 remain_map, folded_set = _remaining_stacks_upto(h, street_key, upto_idx)
                 eff = _effective_stack_for_hero(remain_map, folded_set, hero)
-                if eff is None or eff <= 0 or float(pot_amount) <= 0:
+                pot_amt = float(pot_amount)
+                # SPR (hero-only): effective stack / pot
+                if eff is None or eff <= 0 or pot_amt <= 0:
                     self.info_spr_var.set(INFO_PLACEHOLDER)
-                    return
-                spr = (eff / float(pot_amount))
-                self.info_spr_var.set(f"{spr:.2f}")
+                else:
+                    spr = (eff / pot_amt)
+                    self.info_spr_var.set(f"{spr:.2f}")
+                # PTS (hero-only): percent the pot represents of HERO's remaining stack
+                hero_stack = None
+                if hero and (hero in remain_map) and (hero not in folded_set):
+                    try:
+                        hero_stack = float(remain_map.get(hero, 0.0))
+                    except Exception:
+                        hero_stack = None
+                if hero_stack is None or hero_stack <= 0:
+                    self.info_pts_var.set(INFO_PLACEHOLDER)
+                else:
+                    # If pot is 0, show 0.0%
+                    pts_pct = (pot_amt / hero_stack) * 100.0 if pot_amt >= 0 else 0.0
+                    self.info_pts_var.set(f"{pts_pct:.1f}%")
             except Exception:
                 self.info_spr_var.set(INFO_PLACEHOLDER)
+                self.info_pts_var.set(INFO_PLACEHOLDER)
 
         # Pot odds for current actor (if applicable)
         actions = hand.get('actions', {}).get(self.current_street, []) or []
