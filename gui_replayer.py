@@ -1002,6 +1002,35 @@ class HandReplayerGUI:
             return visible
         return visible
 
+    def compute_folded_players_upto(self, hand, target_street: str, target_action_index: int):
+        """
+        Return a set of players who have folded up to and including target_action_index
+        on target_street. Earlier streets are processed fully.
+        This is used to correctly restore fold state when stepping backward.
+        """
+        folded = set()
+        streets = ['preflop', 'flop', 'turn', 'river']
+        for s in streets:
+            actions = hand.get('actions', {}).get(s, []) or []
+            if not actions:
+                if s == target_street:
+                    break
+                continue
+
+            if s == target_street:
+                upto = max(0, min(target_action_index + 1, len(actions)))
+                rng = range(upto)
+            else:
+                rng = range(len(actions))
+
+            for i in rng:
+                act = actions[i]
+                if act.get('player') and act.get('player') != 'Board' and act.get('action') == 'folds':
+                    folded.add(act['player'])
+            if s == target_street:
+                break
+        return folded
+
     def draw_community_cards(self, cards, cx, pot_cy, pot_radius):
         """
         Draw the current visible community cards above the pot circle.
@@ -1107,12 +1136,15 @@ class HandReplayerGUI:
                 if txt:
                     self.show_action_flash(act['player'], txt)
 
+        # Recompute folded players based on the current point in the hand,
+        # so stepping backward correctly restores players who had folded later.
+        try:
+            self.folded_players = self.compute_folded_players_upto(hand, self.current_street, self.current_action_index)
+        except Exception:
+            self.folded_players = set()
+
         self.prev_button.config(state='normal' if self.current_action_index > 0 else 'disabled')
         self.next_button.config(state='normal' if self.has_next_action() else 'disabled')
-        if actions and 0 <= self.current_action_index < len(actions):
-            act = actions[self.current_action_index]
-            if act['action'] == 'folds':
-                self.folded_players.add(act['player'])
         # Refresh table to update pot and bet markers
         self.update_table_canvas()
         self.display_action_history()
