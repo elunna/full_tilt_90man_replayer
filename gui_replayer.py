@@ -79,6 +79,14 @@ class HandReplayerGUI:
         self.info_bounty_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_odds_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        # Session/tournament-wide info panel state
+        self.session_room_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.session_game_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.session_date_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.session_hand_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.session_table_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        # Reuse bounty var for the session panel (moved from Info)
+        # self.info_bounty_var already defined above
 
         # Transient per-seat action overlay state:
         # {'name': <player_name>, 'text': <overlay_text>}
@@ -171,12 +179,28 @@ class HandReplayerGUI:
         tk.Label(info_frame, textvariable=self.info_blinds_var).grid(row=0, column=1, sticky="w")
         tk.Label(info_frame, text="Ante:").grid(row=1, column=0, sticky="w")
         tk.Label(info_frame, textvariable=self.info_ante_var).grid(row=1, column=1, sticky="w")
-        tk.Label(info_frame, text="Bounty:").grid(row=2, column=0, sticky="w")
-        tk.Label(info_frame, textvariable=self.info_bounty_var).grid(row=2, column=1, sticky="w")
-        tk.Label(info_frame, text="Pot:").grid(row=3, column=0, sticky="w")
-        tk.Label(info_frame, textvariable=self.info_pot_var).grid(row=3, column=1, sticky="w")
-        tk.Label(info_frame, text="Pot odds:").grid(row=4, column=0, sticky="w")
-        tk.Label(info_frame, textvariable=self.info_pot_odds_var).grid(row=4, column=1, sticky="w")
+        tk.Label(info_frame, text="Pot:").grid(row=2, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_pot_var).grid(row=2, column=1, sticky="w")
+        tk.Label(info_frame, text="Pot odds:").grid(row=3, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_pot_odds_var).grid(row=3, column=1, sticky="w")
+
+        # Session/Tournament panel (room/game/date/hand/table/bounty)
+        session_title = tk.Label(right_frame, text="Session")
+        session_title.pack(pady=(6, 0))
+        session_frame = tk.Frame(right_frame)
+        session_frame.pack(fill='x', padx=10, pady=(0, 6))
+        tk.Label(session_frame, text="Room:").grid(row=0, column=0, sticky="w")
+        tk.Label(session_frame, textvariable=self.session_room_var).grid(row=0, column=1, sticky="w")
+        tk.Label(session_frame, text="Game:").grid(row=1, column=0, sticky="w")
+        tk.Label(session_frame, textvariable=self.session_game_var).grid(row=1, column=1, sticky="w")
+        tk.Label(session_frame, text="Date:").grid(row=2, column=0, sticky="w")
+        tk.Label(session_frame, textvariable=self.session_date_var).grid(row=2, column=1, sticky="w")
+        tk.Label(session_frame, text="Hand #:").grid(row=3, column=0, sticky="w")
+        tk.Label(session_frame, textvariable=self.session_hand_var).grid(row=3, column=1, sticky="w")
+        tk.Label(session_frame, text="Table #:").grid(row=4, column=0, sticky="w")
+        tk.Label(session_frame, textvariable=self.session_table_var).grid(row=4, column=1, sticky="w")
+        tk.Label(session_frame, text="Bounty:").grid(row=5, column=0, sticky="w")
+        tk.Label(session_frame, textvariable=self.info_bounty_var).grid(row=5, column=1, sticky="w")
 
         # Hand playback display (right side, pushed down by Info)
         action_info_label = tk.Label(right_frame, text="Hand Playback")
@@ -428,6 +452,9 @@ class HandReplayerGUI:
 
         self.update_table_canvas()
         self.update_action_viewer()
+
+        # Update session/tournament panel (constant across the tournament/file)
+        self.update_session_panel()
 
         # Process antes and blinds at the start of the hand
         self.process_initial_forced_bets(hand)
@@ -1713,7 +1740,6 @@ class HandReplayerGUI:
         # Defaults
         self.info_blinds_var.set(INFO_PLACEHOLDER)
         self.info_ante_var.set(INFO_PLACEHOLDER)
-        self.info_bounty_var.set(INFO_PLACEHOLDER)
         self.info_pot_var.set(INFO_PLACEHOLDER)
         self.info_pot_odds_var.set(INFO_PLACEHOLDER)
 
@@ -1730,10 +1756,6 @@ class HandReplayerGUI:
             blinds_text = f"{left}/{right}"
         self.info_blinds_var.set(blinds_text)
         self.info_ante_var.set(self._fmt_amount(ante) if ante is not None else INFO_PLACEHOLDER)
-        # Bounty (from header like "$3 + $0.30 KO Sit & Go")
-        header = hand.get('header') or ""
-        bounty_text = self._extract_bounty_from_header(header)
-        self.info_bounty_var.set(bounty_text if bounty_text else INFO_PLACEHOLDER)
 
 
         # Pot before current action index
@@ -1824,6 +1846,83 @@ class HandReplayerGUI:
         else:
             # No call required -> N/A
             self.info_pot_odds_var.set("N/A")
+
+    def _extract_session_info(self, header: str):
+        """
+        Extract session/tournament metadata from the hand header line.
+        Returns dict with keys: room, game, date, hand_no, table_no, bounty
+        Falls back to INFO_PLACEHOLDER-like empty strings if not found.
+        """
+        if not header:
+            header = ""
+        room = ""
+        hand_no = ""
+        table_no = ""
+        date_str = ""
+        game = ""
+        # Room (prefix before "Game #")
+        m = re.match(r"^\s*(.+?)\s+Game\s*#", header, flags=re.IGNORECASE)
+        if m:
+            room = m.group(1).strip()
+        # Hand number after "Game #"
+        m = re.search(r"Game\s*#\s*([0-9]+)", header, flags=re.IGNORECASE)
+        if m:
+            hand_no = m.group(1).strip()
+        # Table number like "Table 4" (first occurrence)
+        m = re.search(r"\bTable\s+([A-Za-z0-9\-]+)", header, flags=re.IGNORECASE)
+        if m:
+            table_no = m.group(1).strip()
+        # Date in YYYY/MM/DD or YYYY-MM-DD
+        m_all = re.findall(r"\b(\d{4}[/-]\d{2}[/-]\d{2})\b", header)
+        if m_all:
+            date_str = m_all[-1]  # take the last date-like token
+        # Game: pick a segment (split by ' - ') that looks like a poker game name
+        candidates = [seg.strip() for seg in header.split(" - ") if seg.strip()]
+        game_keywords = ("hold", "omaha", "stud", "razz", "limit", "draw", "hilo", "hi/lo", "eight-or-better")
+        for seg in candidates:
+            s = seg.lower()
+            if any(k in s for k in game_keywords):
+                game = seg
+                break
+        # Bounty from header
+        bounty = self._extract_bounty_from_header(header) or ""
+        return {
+            "room": room or "",
+            "game": game or "",
+            "date": date_str or "",
+            "hand_no": hand_no or "",
+            "table_no": table_no or "",
+            "bounty": bounty or "",
+        }
+
+    def update_session_panel(self):
+        """
+        Populate the Session panel beneath Info:
+          - Room, Game, Date, Hand #, Table #, Bounty
+        """
+        # Defaults
+        self.session_room_var.set(INFO_PLACEHOLDER)
+        self.session_game_var.set(INFO_PLACEHOLDER)
+        self.session_date_var.set(INFO_PLACEHOLDER)
+        self.session_hand_var.set(INFO_PLACEHOLDER)
+        self.session_table_var.set(INFO_PLACEHOLDER)
+        self.info_bounty_var.set(INFO_PLACEHOLDER)
+
+        if not self.hands or self.current_hand_index is None:
+            return
+        try:
+            hand = self.hands[self.current_hand_index]
+        except Exception:
+            return
+        header = hand.get('header') or ""
+        meta = self._extract_session_info(header)
+        # Set values (use placeholder if empty)
+        self.session_room_var.set(meta.get("room") or INFO_PLACEHOLDER)
+        self.session_game_var.set(meta.get("game") or INFO_PLACEHOLDER)
+        self.session_date_var.set(meta.get("date") or INFO_PLACEHOLDER)
+        self.session_hand_var.set(meta.get("hand_no") or INFO_PLACEHOLDER)
+        self.session_table_var.set(meta.get("table_no") or INFO_PLACEHOLDER)
+        self.info_bounty_var.set(meta.get("bounty") or INFO_PLACEHOLDER)
 
     def has_next_action(self):
         hand = self.hands[self.current_hand_index]

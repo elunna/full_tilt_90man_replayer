@@ -1,3 +1,4 @@
+# (no changes required for session panel)
 import re
 import sys
 import pprint
