@@ -113,19 +113,21 @@ class HandReplayerGUI:
         self.bind_keys()
 
     def bind_keys(self):
-        """Bind arrow keys to navigation methods."""
-        self.root.bind("<Left>", lambda e: self.prev_action())
-        self.root.bind("<Right>", lambda e: self.next_action())
-        self.root.bind("<Down>", lambda e: self.navigate_hands(-1))
-        self.root.bind("<Up>", lambda e: self.navigate_hands(1))
-        # New shortcuts:
+        """Bind arrow keys: Left/Right = hands; Up/Down = actions."""
+        # Hands
+        self.root.bind("<Left>", lambda e: self.navigate_hands(-1))  # previous hand
+        self.root.bind("<Right>", lambda e: self.navigate_hands(1))  # next hand
+        # Actions
+        self.root.bind("<Up>", lambda e: self.prev_action())         # previous action
+        self.root.bind("<Down>", lambda e: self.next_action())       # next action
+        # New shortcuts (unchanged):
         # - Ctrl+Left: jump to beginning of current hand
-        self.root.bind("<Control-Left>", lambda e: self.jump_to_hand_start())
+        self.root.bind("<Control-Up>", lambda e: self.jump_to_hand_start())
         # - Ctrl+Right: jump to end of current hand
-        self.root.bind("<Control-Right>", lambda e: self.jump_to_hand_end())
+        self.root.bind("<Control-Down>", lambda e: self.jump_to_hand_end())
         # - Ctrl+Up: jump to last hand; Ctrl+Down: jump to first hand
-        self.root.bind("<Control-Up>", lambda e: (self.select_hand(len(self.hands) - 1) if self.hands else None))
-        self.root.bind("<Control-Down>", lambda e: (self.select_hand(0) if self.hands else None))
+        self.root.bind("<Control-Right>", lambda e: (self.select_hand(len(self.hands) - 1) if self.hands else None))
+        self.root.bind("<Control-Left>", lambda e: (self.select_hand(0) if self.hands else None))
         
     def prev_action(self):
         """Navigate to the previous action."""
