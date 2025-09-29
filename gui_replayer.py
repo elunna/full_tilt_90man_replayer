@@ -801,28 +801,38 @@ class HandReplayerGUI:
                 # so it sits visually "next to" the player box without clipping.
                 self.draw_dealer_button(x, y, cx, cy)
 
-        # Pot area (move down a bit to make room for community cards above)
+        # Pot area anchor (used for community card placement and pot text below them)
         pot_radius = int(min(table_a, table_b) * 0.25)
-        pot_offset_y = int(min(table_a, table_b) * 0.18)  # push pot down relative to table size
+        pot_offset_y = int(min(table_a, table_b) * 0.18)  # anchor point similar to prior pot circle center
         pot_cy = cy + pot_offset_y
-        self.table_canvas.create_oval(
-            cx - pot_radius, pot_cy - pot_radius,
-            cx + pot_radius, pot_cy + pot_radius,
-            fill="#222", outline="#fff", width=3
-        )
 
-        # Compute and render pot
+        # Compute pot size (state up to the current action)
         pot_amount = 0
         if hand and self.current_street is not None and self.current_action_index is not None:
             pot_amount = self.compute_pot_upto(hand, self.current_street, self.current_action_index)
-        # POT label positioned relative to the moved pot circle
-        self.table_canvas.create_text(cx, pot_cy + 24, text="POT", fill="white", font=("Arial", 11, "bold"))
-        self.table_canvas.create_text(cx, pot_cy + 44, text=f"${pot_amount:,}", fill="white", font=("Arial", 11))
 
-        # Draw community cards revealed up to the current action (above the pot circle)
+        # Draw community cards revealed up to the current action
+        board_cards = []
         if hand and self.current_street is not None and self.current_action_index is not None:
             board_cards = self.compute_board_upto(hand, self.current_street, self.current_action_index)
             self.draw_community_cards(board_cards, cx, pot_cy, pot_radius)
+
+        # Place the POT label and amount just below the community cards
+        # Use the same positioning math as draw_community_cards to find the bottom edge
+        top_margin = 10
+        w = CARD_WIDTH
+        h = CARD_HEIGHT
+        cards_top = int((pot_cy - pot_radius) - h - top_margin)
+        cards_bottom = cards_top + h
+        # Slightly larger fonts and extra spacing between label and amount
+        pot_label_y = cards_bottom + 8
+        amount_y = pot_label_y + 42  # extra padding between "POT" and the amount
+        self.table_canvas.create_text(
+            cx, pot_label_y, text="POT", fill="white", font=("Arial", 13, "bold")
+        )
+        self.table_canvas.create_text(
+            cx, amount_y, text=f"${pot_amount:,}", fill="white", font=("Arial", 14, "bold")
+        )
         
         # Compute and draw current street bet/contribution markers
         if hand and self.current_street is not None and self.current_action_index is not None:
