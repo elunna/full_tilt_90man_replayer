@@ -118,6 +118,14 @@ class HandReplayerGUI:
         self.root.bind("<Right>", lambda e: self.next_action())
         self.root.bind("<Down>", lambda e: self.navigate_hands(-1))
         self.root.bind("<Up>", lambda e: self.navigate_hands(1))
+        # New shortcuts:
+        # - Ctrl+Left: jump to beginning of current hand
+        self.root.bind("<Control-Left>", lambda e: self.jump_to_hand_start())
+        # - Ctrl+Right: jump to end of current hand
+        self.root.bind("<Control-Right>", lambda e: self.jump_to_hand_end())
+        # - Ctrl+Up: jump to last hand; Ctrl+Down: jump to first hand
+        self.root.bind("<Control-Up>", lambda e: (self.select_hand(len(self.hands) - 1) if self.hands else None))
+        self.root.bind("<Control-Down>", lambda e: (self.select_hand(0) if self.hands else None))
         
     def prev_action(self):
         """Navigate to the previous action."""
@@ -284,10 +292,15 @@ class HandReplayerGUI:
         # Navigation controls (replay controls) - now under hand selector
         controls_frame = tk.Frame(bottom_frame)
         controls_frame.pack(side='top', fill='x', pady=(2,0))
+        # CD-style navigation: First, Prev, Next, Last
+        self.first_button = tk.Button(controls_frame, text="|<", command=self.jump_to_hand_start, state='disabled', width=5)
+        self.first_button.pack(side='left', padx=2)
         self.prev_button = tk.Button(controls_frame, text="Prev", command=self.prev_action, state='disabled', width=8)
         self.prev_button.pack(side='left', padx=2)
         self.next_button = tk.Button(controls_frame, text="Next", command=self.next_action, state='disabled', width=8)
         self.next_button.pack(side='left', padx=2)
+        self.last_button = tk.Button(controls_frame, text=">|", command=self.jump_to_hand_end, state='disabled', width=5)
+        self.last_button.pack(side='left', padx=2)
 
         # Stack display mode controls (centered radio buttons with larger targets)
         # Use a dedicated frame and place() to center within controls_frame without disrupting left-aligned widgets.
@@ -1860,6 +1873,74 @@ class HandReplayerGUI:
         # Update info panel (blinds/ante/pot/pot odds)
         self.update_info_panel()
         self._last_action_index = self.current_action_index
+
+        # Update CD-style button states based on current position
+        try:
+            hand = self.hands[self.current_hand_index]
+        except Exception:
+            hand = None
+        if hand:
+            # First button disabled only if we're at very first action overall
+            first_s, first_i = self._get_first_action_pos(hand)
+            at_first = (self.current_street == first_s and (self.current_action_index or 0) <= first_i)
+            self.first_button.config(state='disabled' if at_first else 'normal')
+            # Last button disabled only if we're at very last action overall
+            last_s, last_i = self._get_last_action_pos(hand)
+            at_last = (self.current_street == last_s and (self.current_action_index or 0) >= last_i)
+            self.last_button.config(state='disabled' if at_last else 'normal')
+        else:
+            self.first_button.config(state='disabled')
+            self.last_button.config(state='disabled')
+
+    # ====== Jump helpers (beginning/end of hand) ======
+    def _get_first_action_pos(self, hand):
+        """
+        Return (street_name, action_index) for the first action in the hand.
+        If no actions exist, default to ('preflop', 0).
+        """
+        streets = ['preflop', 'flop', 'turn', 'river']
+        for s in streets:
+            actions = hand.get('actions', {}).get(s, []) or []
+            if actions:
+                return s, 0
+        return 'preflop', 0
+
+    def _get_last_action_pos(self, hand):
+        """
+        Return (street_name, action_index) for the last action in the hand.
+        If no actions exist, default to ('preflop', 0).
+        """
+        streets = ['preflop', 'flop', 'turn', 'river']
+        last_s = None
+        last_i = 0
+        for s in streets:
+            actions = hand.get('actions', {}).get(s, []) or []
+            if actions:
+                last_s = s
+                last_i = len(actions) - 1
+        if last_s is None:
+            return 'preflop', 0
+        return last_s, last_i
+
+    def jump_to_hand_start(self):
+        """Jump to the first action of the current hand."""
+        if not self.hands or self.current_hand_index is None:
+            return
+        hand = self.hands[self.current_hand_index]
+        s, i = self._get_first_action_pos(hand)
+        self.current_street = s
+        self.current_action_index = i
+        self.update_action_viewer()
+
+    def jump_to_hand_end(self):
+        """Jump to the last action of the current hand."""
+        if not self.hands or self.current_hand_index is None:
+            return
+        hand = self.hands[self.current_hand_index]
+        s, i = self._get_last_action_pos(hand)
+        self.current_street = s
+        self.current_action_index = i
+        self.update_action_viewer()
 
     def display_action_history(self):
         if not self.hands or self.current_hand_index is None:
