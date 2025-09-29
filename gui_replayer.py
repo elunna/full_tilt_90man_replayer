@@ -70,6 +70,7 @@ class HandReplayerGUI:
         self.current_action_index = None
         self.folded_players = set()
         self.player_cards = {}
+        self.sitting_out_players = set()
         self._last_action_index = None
 
         # Info panel state
@@ -401,6 +402,13 @@ class HandReplayerGUI:
         self.current_hand_index = idx
         hand = self.hands[idx]
         self.folded_players = set()
+        # Initialize sitting-out players from seat info for this hand
+        try:
+            self.sitting_out_players = {
+                p['name'] for p in hand['players'] if p.get('sitting_out')
+            }
+        except Exception:
+            self.sitting_out_players = set()
         self.player_cards = {p['name']: ['??', '??'] for p in hand['players']}
         self.current_street = 'preflop'
         self.current_action_index = 0
@@ -474,7 +482,7 @@ class HandReplayerGUI:
         detail = act.get('detail', '')
         player = act['player']
         
-        if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
+        if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins', 'is sitting out', 'has returned'):
             return
         if action == 'posts':
             # Blinds and similar forced posts: count in both pot and street contribution
@@ -548,7 +556,14 @@ class HandReplayerGUI:
                     # Show the transient action overlay instead of name/chips
                     self.draw_seat_action_overlay(x, y, flash.get('text', '').upper())
                 else:
-                    self.draw_seat_label(x, y, r, player['name'], player['chips'], cy)
+                    # If player is sitting out, replace chip display with "sitting out"
+                    if player['name'] in self.sitting_out_players:
+                        chip_display = "sitting out"
+                    else:
+                        chip_display = player['chips']
+
+                    self.draw_seat_label(x, y, r, player['name'], chip_display, cy)
+
             else:
                 # Draw an empty seat rectangle (no text) so all seats are visible by default
                 self.draw_empty_seat(x, y)
@@ -885,7 +900,7 @@ class HandReplayerGUI:
             action = act['action']
             detail = act.get('detail', '')
             player = act['player']
-            if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
+            if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins', 'is sitting out', 'has returned'):
                 return
             if action == 'posts' or action == 'antes':
                 # Includes blinds and antes
@@ -950,7 +965,7 @@ class HandReplayerGUI:
             action = act['action']
             detail = act.get('detail', '')
             player = act['player']
-            if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins'):
+            if action in ('checks', 'folds', 'shows', 'mucks', 'collected', 'wins', 'is sitting out', 'has returned'):
                 continue
             if action == 'posts':
                 amt = self._extract_first_amount(detail)
@@ -1047,6 +1062,47 @@ class HandReplayerGUI:
             # Gold-like fill with dark outline
             self.table_canvas.create_oval(wx - r, wy - r, wx + r, wy + r, fill="#ffd700", outline="#7a5a00", width=2)
             self.table_canvas.create_text(wx, wy, text=f"{amount:,}", fill="#000", font=("Arial", 9, "bold"))
+
+    def compute_sitting_out_upto(self, hand, target_street: str, target_action_index: int):
+        """
+        Determine which players are currently sitting out up to and including target_action_index
+        on target_street. Earlier streets are processed fully.
+        Starts from any players marked 'sitting_out' in the seat info for this hand,
+        then applies 'is sitting out' / 'has returned' actions.
+        """
+        sitting = set()
+        try:
+            for p in hand.get('players', []):
+                if p.get('sitting_out'):
+                    sitting.add(p['name'])
+        except Exception:
+            pass
+
+        streets = ['preflop', 'flop', 'turn', 'river']
+        for s in streets:
+            actions = hand.get('actions', {}).get(s, []) or []
+            if not actions:
+                if s == target_street:
+                    break
+                continue
+            if s == target_street:
+                upto = max(0, min((target_action_index or 0) + 1, len(actions)))
+                rng = range(upto)
+            else:
+                rng = range(len(actions))
+            for i in rng:
+                a = actions[i]
+                act = (a.get('action') or '').lower()
+                name = a.get('player')
+                if not name or name == 'Board':
+                    continue
+                if act == 'is sitting out':
+                    sitting.add(name)
+                elif act == 'has returned':
+                    sitting.discard(name)
+            if s == target_street:
+                break
+        return sitting
 
     # ====== Community cards helpers ======
     def compute_board_upto(self, hand, target_street: str, target_action_index: int):
@@ -1379,6 +1435,34 @@ class HandReplayerGUI:
         except Exception:
             self.folded_players = set()
 
+        # Compute sitting-out state immediately BEFORE the current action,
+        # so stepping backward to a sit-out action shows the player as active (not yet applied).
+        prev_idx_for_state = max(-1, (self.current_action_index or 0) - 1)
+        try:
+            self.sitting_out_players = self.compute_sitting_out_upto(
+                hand, self.current_street, prev_idx_for_state
+            )
+        except Exception:
+            # Fall back to just seat info
+            try:
+                self.sitting_out_players = {
+                    p['name'] for p in hand.get('players', []) if p.get('sitting_out')
+                }
+            except Exception:
+                self.sitting_out_players = set()
+
+        # If stepping forward and the CURRENT action toggles sit-out state, apply immediately
+        last_idx = getattr(self, "_last_action_index", None)
+        if actions and 0 <= self.current_action_index < len(actions):
+            cur_act = actions[self.current_action_index]
+            cur_name = cur_act.get('player')
+            cur_action = (cur_act.get('action') or '').lower()
+            if last_idx is not None and self.current_action_index > last_idx and cur_name and cur_name != 'Board':
+                if cur_action == 'is sitting out':
+                    self.sitting_out_players.add(cur_name)
+                elif cur_action == 'has returned':
+                    self.sitting_out_players.discard(cur_name)
+
         # Rebuild visible hole cards based on hero info and any prior 'shows' before the current action.
         # Start with all unknowns.
         try:
@@ -1521,6 +1605,8 @@ class HandReplayerGUI:
             'folds': 'FOLD',
             'shows': 'SHOWS',
             'mucks': 'MUCKS',
+            'is sitting out': 'SIT OUT',
+            'has returned': 'RETURNED',
             'wins': 'WINS',
             'collected': 'WINS',
             # Intentionally exclude 'posts' and 'antes' to avoid flashing on forced bets

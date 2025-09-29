@@ -42,7 +42,7 @@ class FullTiltHandParser:
             'board': {'flop': [], 'turn': [], 'river': []},  # Community cards
         }
         player_re = re.compile(r"Seat\s+(\d+):\s+(.+?)\s+\(([\d,]+)\)")
-        action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|antes|mucks|wins)(.*)")
+        action_re = re.compile(r"^(.+?) (bets|calls|raises|checks|folds|shows|collected|posts|antes|mucks|wins|is sitting out|has returned)(.*)")
         button_re = re.compile(r"The button is in seat #(\d+)", re.IGNORECASE)
         summary_section = False
 
@@ -126,10 +126,14 @@ class FullTiltHandParser:
             if not summary_section and line.startswith('Seat '):
                 m = player_re.match(line)
                 if m:
+                    # Detect "is sitting out" status if present in the seat line
+                    sitting_out = ('is sitting out' in line.lower())
                     hand_info['players'].append({
                         'seat': int(m.group(1)),
                         'name': m.group(2).strip(),
-                        'chips': int(m.group(3).replace(',', ''))
+                        'chips': int(m.group(3).replace(',', '')),
+                        # Optional per-hand initial status
+                        'sitting_out': sitting_out
                     })
             elif summary_section:
                 if ':' in line:
