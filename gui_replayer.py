@@ -2417,8 +2417,10 @@ class HandReplayerGUI:
             # Display format split across columns:
             #   col1: "x-to-1 [y%]" (left)
             #   col3: player name (right)
-            self.info_pot_odds_var.set(f"{ratio_str} [{pct}]")
-            self.info_pot_odds_player_var.set(next_actor)
+            # Inline the actor name after the % to avoid shifting right-aligned columns
+            # when names of different lengths appear.
+            self.info_pot_odds_var.set(f"{ratio_str} [{pct}] {next_actor}")
+            self.info_pot_odds_player_var.set("")
         else:
             # No call required -> N/A
             self.info_pot_odds_var.set("N/A")
