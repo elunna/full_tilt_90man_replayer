@@ -190,10 +190,7 @@ class HandReplayerGUI:
         # Blinds + Ante on same row
         tk.Label(info_frame, text="Blinds:").grid(row=1, column=0, sticky="w")
         tk.Label(info_frame, textvariable=self.info_blinds_var).grid(row=1, column=1, sticky="w")
-        # Ante moved to same row, aligned to the right side of the panel
-        tk.Label(info_frame, text="Ante:").grid(row=1, column=2, sticky="e")
-        tk.Label(info_frame, textvariable=self.info_ante_var).grid(row=1, column=3, sticky="e")
-        # Remaining rows
+        # Remaining rows (Ante will be appended into the Blinds line when present)
         tk.Label(info_frame, text="Pot:").grid(row=2, column=0, sticky="w")
         tk.Label(info_frame, textvariable=self.info_pot_var).grid(row=2, column=1, sticky="w")
         tk.Label(info_frame, text="Pot odds:").grid(row=3, column=0, sticky="w")
@@ -1797,8 +1794,13 @@ class HandReplayerGUI:
             left = self._fmt_amount(sb) if sb is not None else "?"
             right = self._fmt_amount(bb) if bb is not None else "?"
             blinds_text = f"{left}/{right}"
+            # Append ante inline if present: "Blinds: $SB/$BB, Ante $X"
+            if ante is not None:
+                blinds_text += f", Ante {self._fmt_amount(ante)}"
         self.info_blinds_var.set(blinds_text)
-        self.info_ante_var.set(self._fmt_amount(ante) if ante is not None else INFO_PLACEHOLDER)
+        # Ante is now displayed inline with Blinds; keep the separate var unused
+        # to avoid showing a placeholder elsewhere.
+        self.info_ante_var.set("")
 
 
         # Pot before current action index
