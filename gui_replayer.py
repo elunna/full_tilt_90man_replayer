@@ -1124,7 +1124,6 @@ class HandReplayerGUI:
             return
         hand = self.hands[self.current_hand_index]
         lines = []
-        lines.append(hand['header'])
         lines.append("="*28)
         streets = ['preflop', 'flop', 'turn', 'river']
         for street in streets:
