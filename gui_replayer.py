@@ -1254,6 +1254,22 @@ class HandReplayerGUI:
         # Pot before current action index
         # Use previous action index so the pot reflects the state the actor is facing
         prev_idx = max(-1, (self.current_action_index or 0) - 1)
+
+        # Ensure initial pot includes all forced bets (antes + blinds) on preflop.
+        # When a hand is first loaded, prev_idx will be -1, which would omit forced bets.
+        # Bump prev_idx to the index of the last leading forced bet so the Info panel
+        # shows the correct initial pot immediately.
+        if self.current_street == 'preflop':
+            actions_pf = hand.get('actions', {}).get('preflop', [])
+            forced_end_idx = -1
+            for i, a in enumerate(actions_pf):
+                if a.get('action') in ('posts', 'antes'):
+                    forced_end_idx = i
+                else:
+                    break
+            if prev_idx < forced_end_idx:
+                prev_idx = forced_end_idx
+
         try:
             pot_before = self.compute_pot_upto(hand, self.current_street, prev_idx)
         except Exception:
