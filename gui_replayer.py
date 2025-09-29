@@ -737,9 +737,16 @@ class HandReplayerGUI:
                                width=SEAT_BORDER_WIDTH)
 
         # Centered text atop the rectangle
-        label_text = f"{name}\n${chips}"
-        self.table_canvas.create_text(x, y, text=label_text, font=("Arial", 12, "bold"), fill="white", anchor="center")
-
+        # Only prefix with $ for numeric chip values; for status strings like "sitting out" don't add $.
+        if isinstance(chips, (int, float)):
+            chips_str = f"${chips}"
+        else:
+            chips_str = str(chips)
+        label_text = f"{name}\n{chips_str}"
+        # Ensure the text itself is centered within the seat (for multi-line text as well)
+        self.table_canvas.create_text(
+            x, y, text=label_text, font=("Arial", 12, "bold"), fill="white", anchor="center", justify="center"
+        )
     def draw_seat_action_overlay(self, x, y, text):
         """Draw a fixed-size rounded black box with bold, large overlay text (e.g., BET, CALL)."""
         left = int(x - SEAT_BOX_WIDTH // 2)
