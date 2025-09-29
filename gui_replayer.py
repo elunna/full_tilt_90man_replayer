@@ -288,13 +288,40 @@ class HandReplayerGUI:
         self.action_label = tk.Label(controls_frame, text="Action: ")
         self.action_label.pack(side='left', padx=10)
 
-        # Compact stack display mode control (top-right)
-        tk.Label(controls_frame, text="Stacks:").pack(side='right', padx=(6, 2))
-        self.stack_mode_menu = tk.OptionMenu(controls_frame, self.stack_view_mode, "Chips", "BB", "True BB", "M")
-        self.stack_mode_menu.config(width=8)
-        self.stack_mode_menu.pack(side='right')
-        # Repaint seat labels on mode change
-        self.stack_view_mode.trace_add('write', lambda *args: self.update_table_canvas())
+        # Stack display mode controls (centered radio buttons with larger targets)
+        # Use a dedicated frame and place() to center within controls_frame without disrupting left-aligned widgets.
+        stack_mode_frame = tk.Frame(controls_frame)
+        # Center horizontally at the top of the controls bar
+        stack_mode_frame.place(relx=0.5, rely=0.0, anchor='n')
+
+        tk.Label(stack_mode_frame, text="Stacks:", font=("Arial", 11, "bold")).pack(side='left', padx=(6, 8))
+
+        # Keep references to radios for style updates
+        self._stack_radio_buttons = {}
+        def _make_stack_radio(text, value):
+            rb = tk.Radiobutton(
+                stack_mode_frame, text=text, variable=self.stack_view_mode, value=value,
+                indicatoron=0,  # render as a button for larger click target
+                font=("Arial", 12), padx=14, pady=6,  # roughly 3x larger than default
+                bd=2, relief='ridge', highlightthickness=0, takefocus=0,
+                activebackground="#ececec", selectcolor="#dddddd"
+            )
+            rb.pack(side='left', padx=12, pady=2)
+            self._stack_radio_buttons[value] = rb
+            return rb
+
+        _make_stack_radio("Chips",   "Chips")
+        _make_stack_radio("BB",      "BB")
+        _make_stack_radio("tBB",     "True BB")  # value remains "True BB" internally
+        _make_stack_radio("M",       "M")
+
+        # React to selection changes: restyle radios and repaint seat labels
+        def _on_stack_mode_change(*_args):
+            self._update_stack_mode_styles()
+            self.update_table_canvas()
+        self.stack_view_mode.trace_add('write', _on_stack_mode_change)
+        # Apply initial styling
+        self._update_stack_mode_styles()
 
     def get_seat_positions(self, seats, cx, cy, a, b):
         positions = []
@@ -1942,6 +1969,25 @@ class HandReplayerGUI:
             return f"${amt:,}"
         except Exception:
             return f"${amt}"
+
+    def _update_stack_mode_styles(self):
+        """
+        Visually emphasize the selected stack view mode:
+          - Selected: bold label, thicker solid border.
+          - Unselected: normal label, ridge border.
+        """
+        try:
+            selected = self.stack_view_mode.get()
+        except Exception:
+            selected = "Chips"
+        buttons = getattr(self, "_stack_radio_buttons", {}) or {}
+        for value, rb in buttons.items():
+            if not isinstance(rb, tk.Radiobutton):
+                continue
+            if value == selected:
+                rb.config(font=("Arial", 12, "bold"), bd=3, relief="solid")
+            else:
+                rb.config(font=("Arial", 12, "normal"), bd=2, relief="ridge")
 
     def _format_stack_display(self, chips_value, hand):
         """
