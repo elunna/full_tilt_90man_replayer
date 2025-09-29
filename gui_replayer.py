@@ -26,7 +26,7 @@ CARD_OFFSET_PX = 70  # Increased to move cards further inward
 SEAT_BOX_WIDTH = 280
 SEAT_BOX_HEIGHT = 108
 SEAT_BORDER_RADIUS = 16
-SEAT_BORDER_COLOR = "#2e2e2e"
+SEAT_BORDER_COLOR = "#808080"
 SEAT_BORDER_WIDTH = 6
 
 def get_hero_result(hand, hero=None):
@@ -676,7 +676,7 @@ class HandReplayerGUI:
         self.draw_rounded_rect(
             left, top, right, bottom,
             radius=SEAT_BORDER_RADIUS,
-            fill="black",
+            fill="",
             outline=SEAT_BORDER_COLOR,
             width=SEAT_BORDER_WIDTH
         )
@@ -686,21 +686,59 @@ class HandReplayerGUI:
         Draw a rounded rectangle on the canvas using 4 arcs + 3 rectangles.
         """
         r = max(0, int(radius))
-        # Core rectangles (center and sides)
-        # Center
-        self.table_canvas.create_rectangle(x1 + r, y1, x2 - r, y2, fill=fill, outline=fill)
-        # Left and right
-        self.table_canvas.create_rectangle(x1, y1 + r, x2, y2 - r, fill=fill, outline=fill)
-        # Corner arcs
-        # Top-left
-        self.table_canvas.create_arc(x1, y1, x1 + 2 * r, y1 + 2 * r, start=90, extent=90, style="pieslice", outline=fill, fill=fill)
-        # Top-right
-        self.table_canvas.create_arc(x2 - 2 * r, y1, x2, y1 + 2 * r, start=0, extent=90, style="pieslice", outline=fill, fill=fill)
-        # Bottom-right
-        self.table_canvas.create_arc(x2 - 2 * r, y2 - 2 * r, x2, y2, start=270, extent=90, style="pieslice", outline=fill, fill=fill)
-        # Bottom-left
-        self.table_canvas.create_arc(x1, y2 - 2 * r, x1 + 2 * r, y2, start=180, extent=90, style="pieslice", outline=fill, fill=fill)
-        # Border path using 4 arcs + 4 lines to simulate thick rounded border
+        # Fill shape (only if a fill color is provided)
+        if fill:
+            # Core rectangles (center and sides)
+            # Center
+            self.table_canvas.create_rectangle(x1 + r, y1, x2 - r, y2, fill=fill, outline=fill)
+            # Left and right
+            self.table_canvas.create_rectangle(x1, y1 + r, x2, y2 - r, fill=fill, outline=fill)
+            # Corner arcs as pieslices to make the filled corners
+            # Top-left
+            self.table_canvas.create_arc(
+                x1, y1, x1 + 2 * r, y1 + 2 * r,
+                start=90, extent=90, style="pieslice", outline=fill, fill=fill
+            )
+            # Top-right
+            self.table_canvas.create_arc(
+                x2 - 2 * r, y1, x2, y1 + 2 * r,
+                start=0, extent=90, style="pieslice", outline=fill, fill=fill
+            )
+            # Bottom-right
+            self.table_canvas.create_arc(
+                x2 - 2 * r, y2 - 2 * r, x2, y2,
+                start=270, extent=90, style="pieslice", outline=fill, fill=fill
+            )
+            # Bottom-left
+            self.table_canvas.create_arc(
+                x1, y2 - 2 * r, x1 + 2 * r, y2,
+                start=180, extent=90, style="pieslice", outline=fill, fill=fill
+            )
+
+        # Border path using arcs + lines for a visible rounded outline
+        if outline and width > 0:
+            # Corner arcs (outline only)
+            self.table_canvas.create_arc(
+                x1, y1, x1 + 2 * r, y1 + 2 * r,
+                start=90, extent=90, style="arc", outline=outline, width=width
+            )
+            self.table_canvas.create_arc(
+                x2 - 2 * r, y1, x2, y1 + 2 * r,
+                start=0, extent=90, style="arc", outline=outline, width=width
+            )
+            self.table_canvas.create_arc(
+                x2 - 2 * r, y2 - 2 * r, x2, y2,
+                start=270, extent=90, style="arc", outline=outline, width=width
+            )
+            self.table_canvas.create_arc(
+                x1, y2 - 2 * r, x1 + 2 * r, y2,
+                start=180, extent=90, style="arc", outline=outline, width=width
+            )
+            # Straight edges
+            self.table_canvas.create_line(x1 + r, y1, x2 - r, y1, fill=outline, width=width)
+            self.table_canvas.create_line(x2, y1 + r, x2, y2 - r, fill=outline, width=width)
+            self.table_canvas.create_line(x1 + r, y2, x2 - r, y2, fill=outline, width=width)
+            self.table_canvas.create_line(x1, y1 + r, x1, y2 - r, fill=outline, width=width)
 
     # ====== Pot and contribution helpers ======
 
