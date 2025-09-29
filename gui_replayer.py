@@ -19,6 +19,9 @@ CARD_WIDTH = 120
 CARD_HEIGHT = 160
 SEAT_RADIUS = 44
 CARD_OFFSET_PX = 70  # Increased to move cards further inward
+# Fixed-size seat rectangles (about double previous text-driven size)
+SEAT_BOX_WIDTH = 180
+SEAT_BOX_HEIGHT = 72
 
 def get_hero_result(hand, hero=None):
     vpip = False
@@ -453,14 +456,16 @@ class HandReplayerGUI:
             player = seat_map.get(seat)
             if player:
                 is_folded = player['name'] in self.folded_players
-                # Draw player name and chips in a black rectangle centered at the seat position
-                self.draw_seat_label(x, y, r, player['name'], player['chips'], cy)
+                # Compute seat rectangle top (used to tuck cards behind the seat)
+                seat_top = int(y - SEAT_BOX_HEIGHT // 2)
 
                 if not is_folded:
-                    # Move cards further inward toward center
-                    card_x, card_y = self.get_card_position(x, y, cx, cy, CARD_OFFSET_PX)
+                    # Draw cards centered on the seat, poking out from behind the seat (only top half visible)
                     cards = self.player_cards.get(player['name'], ['??', '??'])
-                    self.draw_cards(card_x, card_y, cards, y, cy)
+                    self.draw_cards_poking_from_seat(x, seat_top, cards)
+
+                # Draw player name and chips in a black fixed-size rectangle centered at the seat position
+                self.draw_seat_label(x, y, r, player['name'], player['chips'], cy)
             else:
                 # No seat circle; just indicate empty at the seat position
                 self.table_canvas.create_text(x, y, text="(empty)", font=("Arial", 9))
@@ -552,6 +557,46 @@ class HandReplayerGUI:
             # Single card (e.g., unknown second card): draw centered
             code = cards[0] if cards[0] else "??"
             draw_one(front_left, front_top, code if code != "" else "??")
+
+    def draw_cards_poking_from_seat(self, seat_cx, seat_top, cards):
+        """
+        Draw two cards centered on the seat such that only the top half is visible
+        above the seat rectangle (the lower half sits behind the seat).
+        The seat rectangle should be drawn AFTER this call to cover the lower half.
+        """
+        if not cards:
+            return
+        w = CARD_WIDTH
+        h = CARD_HEIGHT
+
+        # Front card centered on seat; top positioned so half the card height sits above seat top
+        front_left = int(seat_cx - w // 2)
+        front_top = int(seat_top - h // 2)
+
+        # Back card slightly left and slightly raised for visual layering
+        back_dx = -int(w * 0.20)
+        back_dy = -int(h * 0.06)
+
+        def draw_one(left, top, code):
+            img = getattr(self, "get_card_image", None)
+            photo = img(code) if callable(img) else None
+            if photo is not None:
+                self.table_canvas.create_image(left, top, image=photo, anchor="nw")
+                if not hasattr(self, "_canvas_images"):
+                    self._canvas_images = []
+                self._canvas_images.append(photo)
+            else:
+                self.table_canvas.create_rectangle(left, top, left + w, top + h, fill="#fff", outline="#000", width=2)
+                self.table_canvas.create_text(left + w // 2, top + h // 2, text=code, font=("Arial", 18, "bold"))
+
+        if len(cards) >= 2:
+            back_code = cards[0] if cards[0] else "??"
+            front_code = cards[1] if cards[1] else "??"
+            # Draw back first so it appears beneath
+            draw_one(front_left + back_dx, front_top + back_dy, back_code)
+            draw_one(front_left, front_top, front_code)
+        else:
+            code = cards[0] if cards[0] else "??"
 
     def draw_seat_label(self, x, y, r, name, chips, cy):
         """Draw a black box with white text for player info centered at the seat position."""
