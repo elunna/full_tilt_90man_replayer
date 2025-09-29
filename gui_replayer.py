@@ -81,6 +81,7 @@ class HandReplayerGUI:
         self.info_pot_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_handno_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_odds_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.info_street_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_truebb_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_odds_player_var = tk.StringVar(value=INFO_PLACEHOLDER)
         # Session/tournament-wide info panel state
@@ -191,6 +192,10 @@ class HandReplayerGUI:
         # Hand number (tournament index, starting from 1)
         tk.Label(info_frame, text="Hand:").grid(row=0, column=0, sticky="w")
         tk.Label(info_frame, textvariable=self.info_handno_var).grid(row=0, column=1, sticky="w")
+        # Street (aligned right on same row as Hand #)
+        tk.Label(info_frame, text="Street:").grid(row=0, column=2, sticky="e")
+        tk.Label(info_frame, textvariable=self.info_street_var).grid(row=0, column=3, sticky="e")
+
         # Blinds + Ante on same row
         tk.Label(info_frame, text="Blinds:").grid(row=1, column=0, sticky="w")
         tk.Label(info_frame, textvariable=self.info_blinds_var).grid(row=1, column=1, sticky="w")
@@ -283,10 +288,6 @@ class HandReplayerGUI:
         self.prev_button.pack(side='left', padx=2)
         self.next_button = tk.Button(controls_frame, text="Next", command=self.next_action, state='disabled', width=8)
         self.next_button.pack(side='left', padx=2)
-        self.street_label = tk.Label(controls_frame, text="Street: ")
-        self.street_label.pack(side='left', padx=10)
-        self.action_label = tk.Label(controls_frame, text="Action: ")
-        self.action_label.pack(side='left', padx=10)
 
         # Stack display mode controls (centered radio buttons with larger targets)
         # Use a dedicated frame and place() to center within controls_frame without disrupting left-aligned widgets.
@@ -1708,12 +1709,7 @@ class HandReplayerGUI:
         hand = self.hands[self.current_hand_index]
         streets = ['preflop', 'flop', 'turn', 'river']
         actions = hand['actions'][self.current_street]
-        self.street_label.config(text=f"Street: {self.current_street.title()}")
-        if actions and 0 <= self.current_action_index < len(actions):
-            act = actions[self.current_action_index]
-            self.action_label.config(text=f"Action: {act['player']} {act['action']} {act['detail']}")
-        else:
-            self.action_label.config(text="Action: (no action)")
+        # Street and action info moved/removed from bottom row (street now in Info panel)
 
         # Flash seat overlay for this action (for player actions only, not board)
         if actions and 0 <= self.current_action_index < len(actions):
@@ -2098,6 +2094,7 @@ class HandReplayerGUI:
         self.info_pot_var.set(INFO_PLACEHOLDER)
         self.info_truebb_var.set(INFO_PLACEHOLDER)
         self.info_pot_odds_var.set(INFO_PLACEHOLDER)
+        self.info_street_var.set(INFO_PLACEHOLDER)
         self.info_pot_odds_player_var.set("")
         self.info_pts_var.set(INFO_PLACEHOLDER)
 
@@ -2105,6 +2102,11 @@ class HandReplayerGUI:
             # nothing to display
             return
         hand = self.hands[self.current_hand_index]
+        # Street name (Info panel, row with Hand #)
+        try:
+            self.info_street_var.set(self.current_street.title() if self.current_street else INFO_PLACEHOLDER)
+        except Exception:  # safety: current_street might be None
+            self.info_street_var.set(INFO_PLACEHOLDER)
 
         # Hand number (current index + 1)
         self.info_handno_var.set(str(self.current_hand_index + 1))
