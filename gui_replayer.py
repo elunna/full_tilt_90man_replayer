@@ -19,9 +19,15 @@ CARD_WIDTH = 120
 CARD_HEIGHT = 160
 SEAT_RADIUS = 44
 CARD_OFFSET_PX = 70  # Increased to move cards further inward
-# Fixed-size seat rectangles (about double previous text-driven size)
-SEAT_BOX_WIDTH = 180
-SEAT_BOX_HEIGHT = 72
+# Fixed-size seat rectangles
+# - Wide enough for ~20 chars at typical UI font (≈ 240–280px). Choose generous width to avoid truncation.
+# - 50% bigger vertically than previous 72px -> 108px.
+# - Styled via thick rounded dark gray border.
+SEAT_BOX_WIDTH = 280
+SEAT_BOX_HEIGHT = 108
+SEAT_BORDER_RADIUS = 16
+SEAT_BORDER_COLOR = "#2e2e2e"
+SEAT_BORDER_WIDTH = 6
 
 def get_hero_result(hand, hero=None):
     vpip = False
@@ -227,6 +233,42 @@ class HandReplayerGUI:
                     self.card_back_key = k
                     break
 
+    def get_card_image_sized(self, code, width, height):
+        """
+        Return a PhotoImage for the given card code at the requested size.
+        Unknown codes (like '??') or missing assets fall back to the default back image.
+        Images are resized to (width x height) via PIL if available, otherwise use tk.PhotoImage unscaled.
+        """
+        # Normalize desired key
+        key = None
+        if code and code != "??":
+            key = code.lower()
+        else:
+            key = self.card_back_key
+
+        if not key:
+            return None
+
+        cache_key = (key, int(width), int(height))
+        if cache_key in self.card_image_cache:
+            return self.card_image_cache[cache_key]
+
+        path = self.card_image_paths.get(key)
+        if not path:
+            return None
+
+        try:
+            if PIL_AVAILABLE:
+                img = Image.open(path).convert("RGBA")
+                img = img.resize((int(width), int(height)), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+            else:
+                photo = tk.PhotoImage(file=path)
+        except Exception:
+            return None
+
+        self.card_image_cache[cache_key] = photo
+        return photo
     def get_card_image(self, code):
         """
         Return a PhotoImage for the given card code (e.g., 'Ah', 'Kd').
@@ -464,7 +506,7 @@ class HandReplayerGUI:
                     cards = self.player_cards.get(player['name'], ['??', '??'])
                     self.draw_cards_poking_from_seat(x, seat_top, cards)
 
-                # Draw player name and chips in a black fixed-size rectangle centered at the seat position
+                # Draw player name and chips in a fixed-size rounded rectangle centered at the seat position
                 self.draw_seat_label(x, y, r, player['name'], player['chips'], cy)
             else:
                 # No seat circle; just indicate empty at the seat position
@@ -566,8 +608,12 @@ class HandReplayerGUI:
         """
         if not cards:
             return
-        w = CARD_WIDTH
-        h = CARD_HEIGHT
+        # Enforce: cards should never take up more than 50% of the width of the seat
+        max_card_w = SEAT_BOX_WIDTH // 2
+        # Scale card size down if needed to satisfy seat constraint
+        scale = min(1.0, max(1, max_card_w) / float(CARD_WIDTH))
+        w = int(CARD_WIDTH * scale)
+        h = int(CARD_HEIGHT * scale)
 
         # Front card centered on seat; top positioned so half the card height sits above seat top
         front_left = int(seat_cx - w // 2)
@@ -576,10 +622,12 @@ class HandReplayerGUI:
         # Back card slightly left and slightly raised for visual layering
         back_dx = -int(w * 0.20)
         back_dy = -int(h * 0.06)
+        back_dx = -int(w * 0.20)
+        back_dy = -int(h * 0.06)
 
         def draw_one(left, top, code):
-            img = getattr(self, "get_card_image", None)
-            photo = img(code) if callable(img) else None
+            # Use sized image for per-seat scaling
+            photo = self.get_card_image_sized(code, w, h)
             if photo is not None:
                 self.table_canvas.create_image(left, top, image=photo, anchor="nw")
                 if not hasattr(self, "_canvas_images"):
@@ -599,26 +647,44 @@ class HandReplayerGUI:
             code = cards[0] if cards[0] else "??"
 
     def draw_seat_label(self, x, y, r, name, chips, cy):
-        """Draw a black box with white text for player info centered at the seat position."""
-        anchor = 'center'
-        pad_x = 6
-        pad_y = 4
+        """Draw a fixed-size rounded black box with thick dark gray border, centered at seat position."""
+        # Fixed rectangle centered at (x, y)
+        left = int(x - SEAT_BOX_WIDTH // 2)
+        top = int(y - SEAT_BOX_HEIGHT // 2)
+        right = left + SEAT_BOX_WIDTH
+        bottom = top + SEAT_BOX_HEIGHT
 
+        # Rounded seat rectangle (draw first so cards can tuck behind its bottom half)
+        self.draw_rounded_rect(left, top, right, bottom,
+                               radius=SEAT_BORDER_RADIUS,
+                               fill="black",
+                               outline=SEAT_BORDER_COLOR,
+                               width=SEAT_BORDER_WIDTH)
+
+        # Centered text atop the rectangle
         label_text = f"{name}\n${chips}"
-        tx = x
-        ty = y
+        self.table_canvas.create_text(x, y, text=label_text, font=("Arial", 12, "bold"), fill="white", anchor="center")
 
-        # Create the text first (centered) to measure bbox, then draw a rectangle behind it.
-        text_id = self.table_canvas.create_text(
-            tx, ty, text=label_text, font=("Arial", 11), fill="white", anchor=anchor
-        )
-        x1, y1, x2, y2 = self.table_canvas.bbox(text_id)
-        rect_id = self.table_canvas.create_rectangle(
-            x1 - pad_x, y1 - pad_y, x2 + pad_x, y2 + pad_y,
-            fill="black", outline="#fff", width=1
-        )
-        # Ensure the rectangle is behind the text
-        self.table_canvas.tag_lower(rect_id, text_id)
+    def draw_rounded_rect(self, x1, y1, x2, y2, radius=12, fill="", outline="", width=1):
+        """
+        Draw a rounded rectangle on the canvas using 4 arcs + 3 rectangles.
+        """
+        r = max(0, int(radius))
+        # Core rectangles (center and sides)
+        # Center
+        self.table_canvas.create_rectangle(x1 + r, y1, x2 - r, y2, fill=fill, outline=fill)
+        # Left and right
+        self.table_canvas.create_rectangle(x1, y1 + r, x2, y2 - r, fill=fill, outline=fill)
+        # Corner arcs
+        # Top-left
+        self.table_canvas.create_arc(x1, y1, x1 + 2 * r, y1 + 2 * r, start=90, extent=90, style="pieslice", outline=fill, fill=fill)
+        # Top-right
+        self.table_canvas.create_arc(x2 - 2 * r, y1, x2, y1 + 2 * r, start=0, extent=90, style="pieslice", outline=fill, fill=fill)
+        # Bottom-right
+        self.table_canvas.create_arc(x2 - 2 * r, y2 - 2 * r, x2, y2, start=270, extent=90, style="pieslice", outline=fill, fill=fill)
+        # Bottom-left
+        self.table_canvas.create_arc(x1, y2 - 2 * r, x1 + 2 * r, y2, start=180, extent=90, style="pieslice", outline=fill, fill=fill)
+        # Border path using 4 arcs + 4 lines to simulate thick rounded border
 
     # ====== Pot and contribution helpers ======
 
