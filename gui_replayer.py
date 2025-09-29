@@ -75,6 +75,7 @@ class HandReplayerGUI:
         # Info panel state
         self.info_blinds_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_ante_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.info_bounty_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_odds_var = tk.StringVar(value=INFO_PLACEHOLDER)
 
@@ -169,10 +170,12 @@ class HandReplayerGUI:
         tk.Label(info_frame, textvariable=self.info_blinds_var).grid(row=0, column=1, sticky="w")
         tk.Label(info_frame, text="Ante:").grid(row=1, column=0, sticky="w")
         tk.Label(info_frame, textvariable=self.info_ante_var).grid(row=1, column=1, sticky="w")
-        tk.Label(info_frame, text="Pot:").grid(row=2, column=0, sticky="w")
-        tk.Label(info_frame, textvariable=self.info_pot_var).grid(row=2, column=1, sticky="w")
-        tk.Label(info_frame, text="Pot odds:").grid(row=3, column=0, sticky="w")
-        tk.Label(info_frame, textvariable=self.info_pot_odds_var).grid(row=3, column=1, sticky="w")
+        tk.Label(info_frame, text="Bounty:").grid(row=2, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_bounty_var).grid(row=2, column=1, sticky="w")
+        tk.Label(info_frame, text="Pot:").grid(row=3, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_pot_var).grid(row=3, column=1, sticky="w")
+        tk.Label(info_frame, text="Pot odds:").grid(row=4, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_pot_odds_var).grid(row=4, column=1, sticky="w")
 
         # Hand playback display (right side, pushed down by Info)
         action_info_label = tk.Label(right_frame, text="Hand Playback")
@@ -1274,6 +1277,31 @@ class HandReplayerGUI:
                     ante = self._extract_first_amount(detail)
         return sb, bb, ante
 
+    def _extract_bounty_from_header(self, header: str):
+        """
+        Extract KO bounty amount from a tournament header line.
+        Expected pattern examples:
+          - "$3 + $0.30 KO Sit & Go"  -> returns "$0.30"
+          - "$5 + $1 Knockout"        -> returns "$1" (handles 'Knockout' too)
+        Returns a string like "$0.30" if found, else None.
+        """
+        if not header:
+            return None
+        # Look for: $<buyin> + $<bounty> (KO|Knockout)
+        m = re.search(
+            r"\$\s*\d+(?:\.\d{1,2})?\s*\+\s*\$(\d+(?:\.\d{1,2})?)\s*(?:KO|Knockout)\b",
+            header,
+            flags=re.IGNORECASE
+        )
+        if m:
+            bounty_val = m.group(1)
+            # Normalize to two decimals if needed
+            if '.' in bounty_val:
+                parts = bounty_val.split('.')
+                bounty_val = f"{parts[0]}.{(parts[1] + '00')[:2]}"
+            return f"${bounty_val}"
+        return None
+    
     def update_info_panel(self):
         """
         Populate Info panel:
@@ -1285,6 +1313,7 @@ class HandReplayerGUI:
         # Defaults
         self.info_blinds_var.set(INFO_PLACEHOLDER)
         self.info_ante_var.set(INFO_PLACEHOLDER)
+        self.info_bounty_var.set(INFO_PLACEHOLDER)
         self.info_pot_var.set(INFO_PLACEHOLDER)
         self.info_pot_odds_var.set(INFO_PLACEHOLDER)
 
@@ -1301,6 +1330,11 @@ class HandReplayerGUI:
             blinds_text = f"{left}/{right}"
         self.info_blinds_var.set(blinds_text)
         self.info_ante_var.set(self._fmt_amount(ante) if ante is not None else INFO_PLACEHOLDER)
+        # Bounty (from header like "$3 + $0.30 KO Sit & Go")
+        header = hand.get('header') or ""
+        bounty_text = self._extract_bounty_from_header(header)
+        self.info_bounty_var.set(bounty_text if bounty_text else INFO_PLACEHOLDER)
+
 
         # Pot before current action index
         # Use previous action index so the pot reflects the state the actor is facing
