@@ -29,7 +29,9 @@ SEAT_BORDER_RADIUS = 16
 SEAT_BORDER_COLOR = "#808080"
 SEAT_BORDER_WIDTH = 6
 DEALER_BTN_RADIUS = 30
-DEALER_BTN_MARGIN = 7
+DEALER_BTN_MARGIN = 6
+# Action flash overlay duration (milliseconds)
+ACTION_FLASH_MS = 1000
 
 def get_hero_result(hand, hero=None):
     vpip = False
@@ -67,6 +69,11 @@ class HandReplayerGUI:
         self.current_action_index = None
         self.folded_players = set()
         self.player_cards = {}
+
+        # Transient per-seat action overlay state:
+        # {'name': <player_name>, 'text': <overlay_text>}
+        self.seat_action_flash = None
+        self._seat_action_flash_after = None
 
         self.hand_boxes = []
         self.build_gui()
@@ -494,6 +501,7 @@ class HandReplayerGUI:
         hand = self.hands[self.current_hand_index] if self.hands and self.current_hand_index is not None else None
         seat_map = {p['seat']: p for p in hand['players']} if hand else {}
 
+        flash = self.seat_action_flash  # e.g., {'name': 'Player1', 'text': 'BET'}
         for seat in range(1, SEATS + 1):
             x, y = seat_positions[seat - 1]
             r = SEAT_RADIUS
@@ -509,7 +517,11 @@ class HandReplayerGUI:
                     self.draw_cards_poking_from_seat(x, seat_top, cards)
 
                 # Draw player name and chips in a fixed-size rounded rectangle centered at the seat position
-                self.draw_seat_label(x, y, r, player['name'], player['chips'], cy)
+                if flash and flash.get('name') == player['name']:
+                    # Show the transient action overlay instead of name/chips
+                    self.draw_seat_action_overlay(x, y, flash.get('text', '').upper())
+                else:
+                    self.draw_seat_label(x, y, r, player['name'], player['chips'], cy)
             else:
                 # Draw an empty seat rectangle (no text) so all seats are visible by default
                 self.draw_empty_seat(x, y)
@@ -673,6 +685,23 @@ class HandReplayerGUI:
         label_text = f"{name}\n${chips}"
         self.table_canvas.create_text(x, y, text=label_text, font=("Arial", 12, "bold"), fill="white", anchor="center")
 
+    def draw_seat_action_overlay(self, x, y, text):
+        """Draw a fixed-size rounded black box with bold, large overlay text (e.g., BET, CALL)."""
+        left = int(x - SEAT_BOX_WIDTH // 2)
+        top = int(y - SEAT_BOX_HEIGHT // 2)
+        right = left + SEAT_BOX_WIDTH
+        bottom = top + SEAT_BOX_HEIGHT
+
+        # Background same as occupied seat
+        self.draw_rounded_rect(left, top, right, bottom,
+                               radius=SEAT_BORDER_RADIUS,
+                               fill="black",
+                               outline=SEAT_BORDER_COLOR,
+                               width=SEAT_BORDER_WIDTH)
+        # Big overlay text
+        overlay = text.upper() if text else ""
+        self.table_canvas.create_text(x, y, text=overlay, font=("Arial", 20, "bold"), fill="#ffffff", anchor="center")
+
     def draw_empty_seat(self, x, y):
         """Draw a fixed-size rounded seat rectangle with no text."""
         left = int(x - SEAT_BOX_WIDTH // 2)
@@ -708,6 +737,8 @@ class HandReplayerGUI:
             text="D", fill="#000000",
             font=("Arial", 12, "bold")
         )
+
+    # ====== Action flash control ======
 
     def draw_rounded_rect(self, x1, y1, x2, y2, radius=12, fill="", outline="", width=1):
         """
@@ -1045,6 +1076,15 @@ class HandReplayerGUI:
             self.action_label.config(text=f"Action: {act['player']} {act['action']} {act['detail']}")
         else:
             self.action_label.config(text="Action: (no action)")
+
+        # Flash seat overlay for this action (for player actions only, not board)
+        if actions and 0 <= self.current_action_index < len(actions):
+            act = actions[self.current_action_index]
+            if act.get('player') and act['player'] != 'Board':
+                txt = self._action_to_overlay_text(act.get('action'))
+                if txt:
+                    self.show_action_flash(act['player'], txt)
+
         self.prev_button.config(state='normal' if self.current_action_index > 0 else 'disabled')
         self.next_button.config(state='normal' if self.has_next_action() else 'disabled')
         if actions and 0 <= self.current_action_index < len(actions):
@@ -1080,6 +1120,57 @@ class HandReplayerGUI:
         self.action_info_text.delete(1.0, tk.END)
         self.action_info_text.insert(tk.END, "\n".join(lines))
         self.action_info_text.config(state='disabled')
+
+    def _action_to_overlay_text(self, action: str) -> str:
+        """
+        Map action keywords to seat overlay text. Return "" for actions we don't flash.
+        """
+        if not action:
+            return ""
+        a = action.lower()
+        mapping = {
+            'bets': 'BET',
+            'calls': 'CALL',
+            'raises': 'RAISE',
+            'checks': 'CHECK',
+            'folds': 'FOLD',
+            'shows': 'SHOWS',
+            'mucks': 'MUCKS',
+            'wins': 'WINS',
+            'collected': 'WINS',
+            # Intentionally exclude 'posts' and 'antes' to avoid flashing on forced bets
+        }
+        return mapping.get(a, "")
+
+    def show_action_flash(self, player_name: str, overlay_text: str):
+        """
+        Show a transient action overlay in the player's seat, then clear after ACTION_FLASH_MS.
+        """
+        # Cancel any existing scheduled clear
+        if self._seat_action_flash_after is not None:
+            try:
+                self.root.after_cancel(self._seat_action_flash_after)
+            except Exception:
+                pass
+            self._seat_action_flash_after = None
+
+        # Set flash state and repaint
+        self.seat_action_flash = {'name': player_name, 'text': overlay_text}
+        self.update_table_canvas()
+
+        # Schedule clear
+        self._seat_action_flash_after = self.root.after(ACTION_FLASH_MS, self.clear_action_flash)
+
+    def clear_action_flash(self):
+        """Clear any transient action overlay and repaint."""
+        self.seat_action_flash = None
+        if self._seat_action_flash_after is not None:
+            try:
+                self.root.after_cancel(self._seat_action_flash_after)
+            except Exception:
+                pass
+            self._seat_action_flash_after = None
+        self.update_table_canvas()
 
     def has_next_action(self):
         hand = self.hands[self.current_hand_index]
