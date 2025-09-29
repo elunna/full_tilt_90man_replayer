@@ -509,8 +509,8 @@ class HandReplayerGUI:
                 # Draw player name and chips in a fixed-size rounded rectangle centered at the seat position
                 self.draw_seat_label(x, y, r, player['name'], player['chips'], cy)
             else:
-                # No seat circle; just indicate empty at the seat position
-                self.table_canvas.create_text(x, y, text="(empty)", font=("Arial", 9))
+                # Draw an empty seat rectangle (no text) so all seats are visible by default
+                self.draw_empty_seat(x, y)
 
         # Pot area (move down a bit to make room for community cards above)
         pot_radius = int(min(table_a, table_b) * 0.25)
@@ -664,6 +664,22 @@ class HandReplayerGUI:
         # Centered text atop the rectangle
         label_text = f"{name}\n${chips}"
         self.table_canvas.create_text(x, y, text=label_text, font=("Arial", 12, "bold"), fill="white", anchor="center")
+
+    def draw_empty_seat(self, x, y):
+        """Draw a fixed-size rounded seat rectangle with no text."""
+        left = int(x - SEAT_BOX_WIDTH // 2)
+        top = int(y - SEAT_BOX_HEIGHT // 2)
+        right = left + SEAT_BOX_WIDTH
+        bottom = top + SEAT_BOX_HEIGHT
+
+        # Rounded seat rectangle (same style as occupied seats)
+        self.draw_rounded_rect(
+            left, top, right, bottom,
+            radius=SEAT_BORDER_RADIUS,
+            fill="black",
+            outline=SEAT_BORDER_COLOR,
+            width=SEAT_BORDER_WIDTH
+        )
 
     def draw_rounded_rect(self, x1, y1, x2, y2, radius=12, fill="", outline="", width=1):
         """
