@@ -70,6 +70,7 @@ class HandReplayerGUI:
         self.current_action_index = None
         self.folded_players = set()
         self.player_cards = {}
+        self._last_action_index = None
 
         # Info panel state
         self.info_blinds_var = tk.StringVar(value=INFO_PLACEHOLDER)
@@ -400,6 +401,7 @@ class HandReplayerGUI:
         self.player_cards = {p['name']: ['??', '??'] for p in hand['players']}
         self.current_street = 'preflop'
         self.current_action_index = 0
+        self._last_action_index = None
 
         # Reveal hero hole cards immediately if available
         # ft_hand_parser stores:
@@ -1136,13 +1138,30 @@ class HandReplayerGUI:
                 if txt:
                     self.show_action_flash(act['player'], txt)
 
-        # Recompute folded players based on the current point in the hand,
-        # so stepping backward correctly restores players who had folded later.
+        # Recompute folded players based on the state immediately BEFORE the current action.
+        # This ensures that when you backtrack to a fold action, the player's cards are restored
+        # (fold not yet applied at the current action index).
+        prev_idx = max(-1, (self.current_action_index or 0) - 1)
         try:
-            self.folded_players = self.compute_folded_players_upto(hand, self.current_street, self.current_action_index)
+            self.folded_players = self.compute_folded_players_upto(
+                hand, self.current_street, prev_idx
+            )
         except Exception:
             self.folded_players = set()
 
+        # If stepping forward and the CURRENT action is a fold, apply it immediately so
+        # the player's cards disappear while showing the FOLD action and flash.
+        last_idx = getattr(self, "_last_action_index", None)
+        if actions and 0 <= self.current_action_index < len(actions):
+            cur_act = actions[self.current_action_index]
+            if (
+                    last_idx is not None
+                    and self.current_action_index > last_idx
+                    and cur_act.get('action') == 'folds'
+                    and cur_act.get('player') not in (None, 'Board')
+            ):
+                self.folded_players.add(cur_act['player'])
+        
         self.prev_button.config(state='normal' if self.current_action_index > 0 else 'disabled')
         self.next_button.config(state='normal' if self.has_next_action() else 'disabled')
         # Refresh table to update pot and bet markers
@@ -1150,6 +1169,7 @@ class HandReplayerGUI:
         self.display_action_history()
         # Update info panel (blinds/ante/pot/pot odds)
         self.update_info_panel()
+        self._last_action_index = self.current_action_index
 
     def display_action_history(self):
         if not self.hands or self.current_hand_index is None:
