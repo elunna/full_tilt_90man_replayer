@@ -204,6 +204,15 @@ class HandReplayerGUI:
         self.pot_odds_player_label = tk.Label(info_frame, textvariable=self.info_pot_odds_player_var)
         self.pot_odds_player_label.grid(row=4, column=3, sticky="e")
 
+        # SPR (Stack-to-Pot Ratio) — for Hero only, shown below Pot odds
+        tk.Label(info_frame, text="SPR:").grid(row=5, column=0, sticky="w")
+        # Ensure the variable exists even if created elsewhere
+        try:
+            self.info_spr_var
+        except AttributeError:
+            self.info_spr_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        tk.Label(info_frame, textvariable=self.info_spr_var).grid(row=5, column=1, sticky="w")
+
         # Session/Tournament panel (room/game/date/hand/table/bounty)
         session_title = tk.Label(right_frame, text="Session")
         session_title.pack(pady=(6, 0))
@@ -2025,11 +2034,182 @@ class HandReplayerGUI:
             pot_before = 0
         self.info_pot_var.set(self._fmt_amount(pot_before))
 
+        # Helper(s) for SPR (Stack-to-Pot Ratio) — computed for the Hero only.
+        # Uses pot_amount / effective_stack where "effective stack" follows:
+        # - If exactly 2 active players: lesser of the two remaining stacks.
+        # - If >2 active players and Hero is the smallest: Hero's remaining stack.
+        # - Otherwise take the average of all active stacks; if Hero is the largest, exclude Hero from that average.
+        def _detect_hero_name(h):
+            try:
+                # Common patterns for hero detection
+                if isinstance(h.get('hero', None), str):
+                    return h.get('hero')
+                players = h.get('players', [])
+                for p in players or []:
+                    if isinstance(p, dict):
+                        if p.get('is_hero') or p.get('hero'):
+                            return p.get('name') or p.get('player')
+                # Fallback to instance attribute if present
+                return getattr(self, 'hero_name', None)
+            except Exception:
+                return getattr(self, 'hero_name', None)
+
+        def _starting_stacks(h):
+            stacks = {}
+            # Dict form: {"Alice": 1500, "Bob": 1800, ...}
+            if isinstance(h.get('stacks'), dict):
+                for n, amt in h.get('stacks', {}).items():
+                    try:
+                        stacks[n] = float(amt)
+                    except Exception:
+                        pass
+                if stacks:
+                    return stacks
+            # Players list form: [{"name": "...", "stack": ...}, ...]
+            players = h.get('players', [])
+            for p in players or []:
+                if isinstance(p, dict):
+                    name = p.get('name') or p.get('player')
+                    if not name:
+                        continue
+                    stack = p.get('stack', None)
+                    if stack is None:
+                        stack = p.get('chips', None)
+                    if stack is None:
+                        stack = p.get('starting_stack', None)
+                    try:
+                        if stack is not None:
+                            stacks[name] = float(stack)
+                    except Exception:
+                        pass
+            return stacks
+
+        def _street_order(actions_by_street):
+            # Normalize and order known streets; only include present keys, respecting typical order.
+            present = list(actions_by_street.keys() or [])
+            order_names = ['preflop', 'pre-flop', 'pre flop', 'flop', 'turn', 'river', 'showdown']
+            ordered = []
+            for want in order_names:
+                for k in present:
+                    if isinstance(k, str) and k.lower() == want:
+                        if k not in ordered:
+                            ordered.append(k)
+            # Append any remaining keys in original order, if not already included
+            for k in present:
+                if k not in ordered:
+                    ordered.append(k)
+            return ordered
+
+        def _total_contrib_and_folds_upto(h, street_key, upto_idx):
+            """
+            Aggregate total contributed chips per player across all streets up to
+            and including upto_idx on street_key. Also track folds.
+            """
+            by_street = h.get('actions', {}) or {}
+            contrib = {}
+            folded = set()
+            order = _street_order(by_street)
+            # Helper for adding/subtracting
+            def add_amt(d, k, v):
+                d[k] = d.get(k, 0.0) + float(v)
+            for sk in order:
+                acts = by_street.get(sk, []) or []
+                last_idx = len(acts) - 1
+                if sk == street_key:
+                    last_idx = upto_idx
+                if last_idx < 0:
+                    if sk == street_key:
+                        break
+                    else:
+                        continue
+                for i in range(0, min(last_idx, len(acts) - 1) + 1):
+                    a = acts[i] or {}
+                    p = a.get('player')
+                    if not p or p == 'Board':
+                        continue
+                    t = str(a.get('type', '')).lower()
+                    # detect amount-like fields
+                    amt = a.get('amount', None)
+                    if amt is None:
+                        # try common fields
+                        for k in ('bet', 'raise_to', 'posted', 'ante'):
+                            if a.get(k) is not None:
+                                amt = a.get(k)
+                                break
+                    # fold tracking
+                    if t == 'fold':
+                        folded.add(p)
+                    # uncalled/returned chips reduce contribution
+                    if 'uncalled' in t or 'return' in t:
+                        try:
+                            if amt is not None:
+                                add_amt(contrib, p, -abs(float(amt)))
+                        except Exception:
+                            pass
+                        continue
+                    # chip-committing actions
+                    if amt is not None and t not in ('win', 'collect'):
+                        try:
+                            add_amt(contrib, p, abs(float(amt)))
+                        except Exception:
+                            pass
+                if sk == street_key:
+                    break
+            return contrib, folded
+
+        def _remaining_stacks_upto(h, street_key, upto_idx):
+            base = _starting_stacks(h)
+            contrib, folded = _total_contrib_and_folds_upto(h, street_key, upto_idx)
+            remain = {}
+            for p, s in base.items():
+                left = s - float(contrib.get(p, 0.0))
+                remain[p] = left if left > 0 else 0.0
+            return remain, folded
+
+        def _effective_stack_for_hero(remain_map, folded_set, hero_name):
+            # Active players: not folded and with chips remaining
+            active = [p for p, s in remain_map.items() if s > 0 and p not in folded_set]
+            if hero_name is None or hero_name not in remain_map or hero_name not in active:
+                return None
+            hero_stack = remain_map.get(hero_name, 0.0)
+            others = [remain_map[p] for p in active if p != hero_name]
+            if len(active) < 2 or hero_stack <= 0:
+                return None
+            if len(active) == 2:
+                # heads-up: effective = lesser of two stacks
+                other_stack = others[0] if others else 0.0
+                return min(hero_stack, other_stack)
+            # 3+ players
+            min_other = min(others) if others else 0.0
+            max_other = max(others) if others else 0.0
+            if hero_stack <= min_other:
+                return hero_stack
+            if hero_stack >= max_other:
+                # exclude hero from average
+                return (sum(others) / len(others)) if others else None
+            # otherwise average of all active stacks (including hero)
+            return (hero_stack + sum(others)) / (len(others) + 0)  # len(active)
+
+        def _set_spr_for_state(h, street_key, upto_idx, pot_amount):
+            try:
+                hero = _detect_hero_name(h)
+                remain_map, folded_set = _remaining_stacks_upto(h, street_key, upto_idx)
+                eff = _effective_stack_for_hero(remain_map, folded_set, hero)
+                if eff is None or eff <= 0 or float(pot_amount) <= 0:
+                    self.info_spr_var.set(INFO_PLACEHOLDER)
+                    return
+                spr = (eff / float(pot_amount))
+                self.info_spr_var.set(f"{spr:.2f}")
+            except Exception:
+                self.info_spr_var.set(INFO_PLACEHOLDER)
+
         # Pot odds for current actor (if applicable)
         actions = hand.get('actions', {}).get(self.current_street, []) or []
         if not actions:
             self.info_pot_odds_var.set(INFO_PLACEHOLDER)
             self.info_pot_odds_player_var.set("")
+            # Update SPR for hero using current pot (no further actions on this street yet)
+            _set_spr_for_state(hand, self.current_street, -1, pot_before)
             return
 
         # We want pot odds for the NEXT action, based on the state AFTER the current action.
@@ -2065,6 +2245,8 @@ class HandReplayerGUI:
         if not next_actor:
             self.info_pot_odds_var.set(INFO_PLACEHOLDER)
             self.info_pot_odds_player_var.set("")
+            # Even if no next actor, still update SPR for hero at this state.
+            _set_spr_for_state(hand, self.current_street, max(-1, cur_idx), pot_for_next)
             return
 
         # Facing call for next actor = max contribution - that player's contribution
