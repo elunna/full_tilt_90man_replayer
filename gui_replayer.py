@@ -1036,6 +1036,64 @@ class HandReplayerGUI:
                 break
         return folded
 
+    def compute_shown_cards_upto(self, hand, target_street: str, target_action_index: int):
+        """
+        Return a dict of {player: [card1, card2]} for players who have shown their hole cards
+        up to and including target_action_index on target_street. Earlier streets are processed fully.
+        Only the first 'shows' instance per player that contains bracketed hole cards is used.
+        """
+        shown = {}
+        streets = ['preflop', 'flop', 'turn', 'river']
+        for s in streets:
+            actions = hand.get('actions', {}).get(s, []) or []
+            if not actions:
+                if s == target_street:
+                    break
+                continue
+
+            if s == target_street:
+                upto = max(0, min(target_action_index + 1, len(actions)))
+                rng = range(upto)
+            else:
+                rng = range(len(actions))
+
+            for i in rng:
+                act = actions[i]
+                if act.get('action') != 'shows':
+                    continue
+                player = act.get('player')
+                if not player or player == 'Board':
+                    continue
+                # Keep only the first 'shows' with bracketed hole cards
+                if player not in shown:
+                    cards = self._extract_shown_cards(act.get('detail', '') or '')
+                    if cards:
+                        shown[player] = cards
+            if s == target_street:
+                break
+        return shown
+
+    def _extract_shown_cards(self, detail: str):
+        """
+        Extract two hole cards from a 'shows' detail string like: 'shows [9s Jd]'.
+        Returns a list like ['9s','jd'] or None if not present.
+        """
+        if not detail:
+            return None
+        m = re.search(r"\[([^\]]+)\]", detail)
+        if not m:
+            return None
+        inner = m.group(1).strip()
+        toks = [t.strip() for t in re.split(r"\s+", inner) if t.strip()]
+        # Filter to card-like tokens (rank+suit)
+        cards = []
+        for t in toks:
+            if re.match(r"^(?:[2-9]|10|[tTjJqQkKaA])[shdcSHDC]$", t) or re.match(r"^[2-9tTjJqQkKaA][shdcSHDC]$", t):
+                cards.append(t.lower())
+            if len(cards) >= 2:
+                break
+        return cards if len(cards) >= 2 else None
+
     def draw_community_cards(self, cards, cx, pot_cy, pot_radius):
         """
         Draw the current visible community cards above the pot circle.
@@ -1151,6 +1209,35 @@ class HandReplayerGUI:
             )
         except Exception:
             self.folded_players = set()
+
+        # Rebuild visible hole cards based on hero info and any prior 'shows' before the current action.
+        # Start with all unknowns.
+        try:
+            self.player_cards = {p['name']: ['??', '??'] for p in hand['players']}
+        except Exception:
+            self.player_cards = {}
+        # Reveal hero hole cards if available
+        hero_name = hand.get('hero')
+        hole = hand.get('hole_cards')
+        if hero_name and hole:
+            parts = [p.strip() for p in re.split(r'[\s,]+', hole) if p.strip()]
+            if len(parts) >= 2:
+                self.player_cards[hero_name] = [parts[0], parts[1]]
+        # Apply shown cards up to BEFORE the current action
+        prev_idx_for_show = max(-1, (self.current_action_index or 0) - 1)
+        try:
+            shown_map = self.compute_shown_cards_upto(hand, self.current_street, prev_idx_for_show)
+            for name, cards in shown_map.items():
+                self.player_cards[name] = cards
+        except Exception:
+            pass
+        # If the CURRENT action is a 'shows', apply it immediately so the reveal happens on this action
+        if actions and 0 <= self.current_action_index < len(actions):
+            cur_act = actions[self.current_action_index]
+            if cur_act.get('action') == 'shows' and cur_act.get('player') not in (None, 'Board'):
+                now_cards = self._extract_shown_cards(cur_act.get('detail', '') or '')
+                if now_cards:
+                    self.player_cards[cur_act['player']] = now_cards
 
         # If stepping forward and the CURRENT action is a fold, apply it immediately so
         # the player's cards disappear while showing the FOLD action and flash.
