@@ -2035,7 +2035,7 @@ class HandReplayerGUI:
         self.info_pot_var.set(self._fmt_amount(pot_before))
 
         # Helper(s) for SPR (Stack-to-Pot Ratio) — computed for the Hero only.
-        # Uses pot_amount / effective_stack where "effective stack" follows:
+        # Uses effective_stack / pot_amount where "effective stack" follows:
         # - If exactly 2 active players: lesser of the two remaining stacks.
         # - If >2 active players and Hero is the smallest: Hero's remaining stack.
         # - Otherwise take the average of all active stacks; if Hero is the largest, exclude Hero from that average.
@@ -2276,6 +2276,9 @@ class HandReplayerGUI:
             # No call required -> N/A
             self.info_pot_odds_var.set("N/A")
             self.info_pot_odds_player_var.set("")
+
+        # Update SPR for hero using the pot for the next state on this street.
+        _set_spr_for_state(hand, self.current_street, max(-1, cur_idx), pot_for_next)
 
     def _extract_session_info(self, header: str):
         """
