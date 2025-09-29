@@ -81,6 +81,7 @@ class HandReplayerGUI:
         self.info_pot_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_handno_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_odds_var = tk.StringVar(value=INFO_PLACEHOLDER)
+        self.info_truebb_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_pot_odds_player_var = tk.StringVar(value=INFO_PLACEHOLDER)
         # Session/tournament-wide info panel state
         self.session_room_var = tk.StringVar(value=INFO_PLACEHOLDER)
@@ -191,14 +192,17 @@ class HandReplayerGUI:
         # Blinds + Ante on same row
         tk.Label(info_frame, text="Blinds:").grid(row=1, column=0, sticky="w")
         tk.Label(info_frame, textvariable=self.info_blinds_var).grid(row=1, column=1, sticky="w")
-        # Remaining rows (Ante will be appended into the Blinds line when present)
-        tk.Label(info_frame, text="Pot:").grid(row=2, column=0, sticky="w")
-        tk.Label(info_frame, textvariable=self.info_pot_var).grid(row=2, column=1, sticky="w")
-        tk.Label(info_frame, text="Pot odds:").grid(row=3, column=0, sticky="w")
-        tk.Label(info_frame, textvariable=self.info_pot_odds_var).grid(row=3, column=1, sticky="w")
+        # True BB directly below Blinds
+        tk.Label(info_frame, text="True BB:").grid(row=2, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_truebb_var).grid(row=2, column=1, sticky="w")
+        # Remaining rows (Ante is appended into the Blinds line when present)
+        tk.Label(info_frame, text="Pot:").grid(row=3, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_pot_var).grid(row=3, column=1, sticky="w")
+        tk.Label(info_frame, text="Pot odds:").grid(row=4, column=0, sticky="w")
+        tk.Label(info_frame, textvariable=self.info_pot_odds_var).grid(row=4, column=1, sticky="w")
         # Player name for pot odds, aligned right on the same line
         self.pot_odds_player_label = tk.Label(info_frame, textvariable=self.info_pot_odds_player_var)
-        self.pot_odds_player_label.grid(row=3, column=3, sticky="e")
+        self.pot_odds_player_label.grid(row=4, column=3, sticky="e")
 
         # Session/Tournament panel (room/game/date/hand/table/bounty)
         session_title = tk.Label(right_frame, text="Session")
@@ -1869,6 +1873,27 @@ class HandReplayerGUI:
         self.update_table_canvas()
 
     # ====== Info panel helpers ======
+    def _compute_true_bb(self, hand):
+        """
+        True BB = (sum of all antes and blinds at the very start of the hand) * 2/3.
+        We scan preflop actions from the top, summing consecutive 'posts' and 'antes'
+        until the first non-forced-bet action appears.
+        Returns an integer number of chips, or None if unavailable.
+        """
+        try:
+            actions_pf = hand.get('actions', {}).get('preflop', []) or []
+            forced_sum = 0
+            for a in actions_pf:
+                act = (a.get('action') or '').lower()
+                if act in ('posts', 'antes'):
+                    forced_sum += self._extract_first_amount(a.get('detail', '') or '')
+                else:
+                    break
+            if forced_sum <= 0:
+                return None
+            return int(round((forced_sum * 2) / 3.0))
+        except Exception:
+            return None
     def _fmt_amount(self, amt):
         try:
             return f"${amt:,}"
@@ -1934,6 +1959,7 @@ class HandReplayerGUI:
         self.info_blinds_var.set(INFO_PLACEHOLDER)
         self.info_ante_var.set(INFO_PLACEHOLDER)
         self.info_pot_var.set(INFO_PLACEHOLDER)
+        self.info_truebb_var.set(INFO_PLACEHOLDER)
         self.info_pot_odds_var.set(INFO_PLACEHOLDER)
         self.info_pot_odds_player_var.set("")
 
@@ -1958,6 +1984,20 @@ class HandReplayerGUI:
         # Ante is now displayed inline with Blinds; keep the separate var unused
         # to avoid showing a placeholder elsewhere.
         self.info_ante_var.set("")
+
+        # True BB (2/3 of all forced bets at start of hand).
+        # Only applicable when antes are in play; otherwise show "N/A".
+        if ante is None or ante <= 0:
+            self.info_truebb_var.set("N/A")
+        else:
+            try:
+                true_bb = self._compute_true_bb(hand)
+                if true_bb is None:
+                    self.info_truebb_var.set("N/A")
+                else:
+                    self.info_truebb_var.set(self._fmt_amount(true_bb))
+            except Exception:
+                self.info_truebb_var.set("N/A")
 
 
         # Pot before current action index
