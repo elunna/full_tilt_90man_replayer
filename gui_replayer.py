@@ -474,11 +474,13 @@ class HandReplayerGUI:
                 )
                 self.table_canvas.create_text(x, y, text="(empty)", font=("Arial", 9))
 
-        # Pot area
+        # Pot area (move down a bit to make room for community cards above)
         pot_radius = int(min(table_a, table_b) * 0.25)
+        pot_offset_y = int(min(table_a, table_b) * 0.18)  # push pot down relative to table size
+        pot_cy = cy + pot_offset_y
         self.table_canvas.create_oval(
-            cx - pot_radius, cy - pot_radius,
-            cx + pot_radius, cy + pot_radius,
+            cx - pot_radius, pot_cy - pot_radius,
+            cx + pot_radius, pot_cy + pot_radius,
             fill="#222", outline="#fff", width=3
         )
 
@@ -486,14 +488,14 @@ class HandReplayerGUI:
         pot_amount = 0
         if hand and self.current_street is not None and self.current_action_index is not None:
             pot_amount = self.compute_pot_upto(hand, self.current_street, self.current_action_index)
-        # Move POT text down a bit to make space for community cards above
-        self.table_canvas.create_text(cx, cy + 24, text="POT", fill="white", font=("Arial", 11, "bold"))
-        self.table_canvas.create_text(cx, cy + 44, text=f"${pot_amount:,}", fill="white", font=("Arial", 11))
+        # POT label positioned relative to the moved pot circle
+        self.table_canvas.create_text(cx, pot_cy + 24, text="POT", fill="white", font=("Arial", 11, "bold"))
+        self.table_canvas.create_text(cx, pot_cy + 44, text=f"${pot_amount:,}", fill="white", font=("Arial", 11))
 
-        # Draw community cards revealed up to the current action
+        # Draw community cards revealed up to the current action (above the pot circle)
         if hand and self.current_street is not None and self.current_action_index is not None:
             board_cards = self.compute_board_upto(hand, self.current_street, self.current_action_index)
-            self.draw_community_cards(board_cards, cx, cy)
+            self.draw_community_cards(board_cards, cx, pot_cy, pot_radius)
         
         # Compute and draw current street bet/contribution markers
         if hand and self.current_street is not None and self.current_action_index is not None:
@@ -765,9 +767,10 @@ class HandReplayerGUI:
             return visible
         return visible
 
-    def draw_community_cards(self, cards, cx, cy):
+    def draw_community_cards(self, cards, cx, pot_cy, pot_radius):
         """
-        Draw the current visible community cards centered horizontally above the pot.
+        Draw the current visible community cards above the pot circle.
+        Align to a fixed left anchor so cards don't shift as new ones appear.
         Uses same card image system as hole cards. Falls back to rectangle+text.
         """
         if not cards:
@@ -775,13 +778,18 @@ class HandReplayerGUI:
         gap = 14
         w = CARD_WIDTH
         h = CARD_HEIGHT
-        total_w = len(cards) * w + (len(cards) - 1) * gap
-        start_x = int(cx - total_w / 2)
-        # Place slightly above pot center line
-        top = int(cy - h // 2 - 10)
+
+        # Fixed left anchor based on max 5 community cards so position won't shift as cards are revealed
+        max_cards = 5
+        full_width = max_cards * w + (max_cards - 1) * gap
+        left_anchor = int(cx - full_width / 2)
+
+        # Place cards directly above the top of the pot circle, with a small margin
+        top_margin = 10
+        top = int((pot_cy - pot_radius) - h - top_margin)
 
         for i, code in enumerate(cards):
-            left = start_x + i * (w + gap)
+            left = left_anchor + i * (w + gap)
             img = getattr(self, "get_card_image", None)
             photo = img(code) if callable(img) else None
             if photo is not None:
