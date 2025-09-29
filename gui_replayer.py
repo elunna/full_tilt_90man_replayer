@@ -587,10 +587,23 @@ class HandReplayerGUI:
             non_ante_contrib, ante_contrib = self.compute_street_contrib_upto(
                 hand, self.current_street, self.current_action_index
             )
-            # Draw blind/bet/call/raise markers (green)
-            self.draw_bet_markers(non_ante_contrib, seat_positions, seat_map, cx, cy)
+            # If showdown has started, clear any existing bets by skipping bet markers
+            try:
+                showdown_reached = self.has_showdown_upto(hand, self.current_street, self.current_action_index)
+            except Exception:
+                showdown_reached = False
+            if not showdown_reached:
+                # Draw blind/bet/call/raise markers (green)
+                self.draw_bet_markers(non_ante_contrib, seat_positions, seat_map, cx, cy)
+            # Ante markers (brown, slightly more center)
             # Draw ante markers (brown, slightly more center)
             self.draw_ante_markers(ante_contrib, seat_positions, seat_map, cx, cy)
+            # Draw winnings markers (gold) accumulated up to the current action
+            try:
+                winnings_map = self.compute_winnings_upto(hand, self.current_street, self.current_action_index)
+                self.draw_winnings_markers(winnings_map, seat_positions, seat_map, cx, cy)
+            except Exception:
+                pass
 
     def draw_cards(self, x, y, cards, seat_y=None, cy=None):
         card_width = CARD_WIDTH
@@ -957,6 +970,83 @@ class HandReplayerGUI:
                 delta = max(0, target_total - prev)
                 non_ante[player] = prev + delta
         return non_ante, antes
+
+    def has_showdown_upto(self, hand, target_street: str, target_action_index: int) -> bool:
+        """
+        Return True if any showdown-indicative action ('shows', 'mucks', 'wins', 'collected')
+        has occurred up to and including target_action_index on target_street.
+        Earlier streets are processed fully.
+        """
+        showdown_actions = {'shows', 'mucks', 'wins', 'collected'}
+        streets = ['preflop', 'flop', 'turn', 'river']
+        for s in streets:
+            actions = hand.get('actions', {}).get(s, []) or []
+            if not actions:
+                if s == target_street:
+                    break
+                continue
+            if s == target_street:
+                upto = max(0, min((target_action_index or 0) + 1, len(actions)))
+                rng = range(upto)
+            else:
+                rng = range(len(actions))
+            for i in rng:
+                a = actions[i]
+                if (a.get('action') or '').lower() in showdown_actions:
+                    return True
+            if s == target_street:
+                break
+        return False
+
+    def compute_winnings_upto(self, hand, target_street: str, target_action_index: int):
+        """
+        Accumulate per-player winnings up to and including target_action_index on the target street.
+        Includes both 'wins' and 'collected' actions, summing amounts across main and side pots.
+        Returns: dict {player_name: total_won_int}
+        """
+        winnings = {p['name']: 0 for p in hand.get('players', [])}
+        streets = ['preflop', 'flop', 'turn', 'river']
+        for s in streets:
+            actions = hand.get('actions', {}).get(s, []) or []
+            if not actions:
+                if s == target_street:
+                    break
+                continue
+            if s == target_street:
+                upto = max(0, min((target_action_index or 0) + 1, len(actions)))
+                rng = range(upto)
+            else:
+                rng = range(len(actions))
+            for i in rng:
+                act = actions[i]
+                a = (act.get('action') or '').lower()
+                if a in ('wins', 'collected'):
+                    player = act.get('player')
+                    if not player or player == 'Board':
+                        continue
+                    amt = self._extract_first_amount(act.get('detail', '') or '')
+                    winnings[player] = winnings.get(player, 0) + max(0, amt)
+            if s == target_street:
+                break
+        # Remove zero entries for cleaner rendering
+        return {k: v for k, v in winnings.items() if v > 0}
+
+    def draw_winnings_markers(self, winnings_map, seat_positions, seat_map, cx, cy):
+        """
+        Draw winnings as chip markers near each player's seat.
+        Use a gold color and place slightly closer to the seat than bet markers to avoid overlap.
+        """
+        name_to_seat = {pdata['name']: seat for seat, pdata in seat_map.items()}
+        for name, amount in winnings_map.items():
+            seat = name_to_seat.get(name)
+            if not seat or amount <= 0:
+                continue
+            sx, sy = seat_positions[seat - 1]
+            wx, wy = self.get_centerward_position_fraction(sx, sy, cx, cy, fraction=0.22)
+            r = 26
+            # Gold-like fill with dark outline
+            self.table_canvas.create_oval(wx - r, wy - r, wx + r, wy + r, fill="#ffd700", outline="#7a5a00", width=2)
+            self.table_canvas.create_text(wx, wy, text=f"{amount:,}", fill="#000", font=("Arial", 9, "bold"))
 
     # ====== Community cards helpers ======
     def compute_board_upto(self, hand, target_street: str, target_action_index: int):
