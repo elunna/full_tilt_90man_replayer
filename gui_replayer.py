@@ -92,6 +92,8 @@ class HandReplayerGUI:
         # Reuse bounty var for the session panel (moved from Info)
         # self.info_bounty_var already defined above
 
+        # Stack display mode (Chips, BB, True BB, M)
+        self.stack_view_mode = tk.StringVar(value="Chips")
         # Transient per-seat action overlay state:
         # {'name': <player_name>, 'text': <overlay_text>}
         self.seat_action_flash = None
@@ -285,6 +287,14 @@ class HandReplayerGUI:
         self.street_label.pack(side='left', padx=10)
         self.action_label = tk.Label(controls_frame, text="Action: ")
         self.action_label.pack(side='left', padx=10)
+
+        # Compact stack display mode control (top-right)
+        tk.Label(controls_frame, text="Stacks:").pack(side='right', padx=(6, 2))
+        self.stack_mode_menu = tk.OptionMenu(controls_frame, self.stack_view_mode, "Chips", "BB", "True BB", "M")
+        self.stack_mode_menu.config(width=8)
+        self.stack_mode_menu.pack(side='right')
+        # Repaint seat labels on mode change
+        self.stack_view_mode.trace_add('write', lambda *args: self.update_table_canvas())
 
     def get_seat_positions(self, seats, cx, cy, a, b):
         positions = []
@@ -729,8 +739,12 @@ class HandReplayerGUI:
                     if player['name'] in self.sitting_out_players:
                         chip_display = "sitting out"
                     else:
-                        # Dynamic, up-to-now stack for this player
-                        chip_display = stacks_map.get(player['name'], player.get('chips', 0))
+                        # Dynamic, up-to-now stack for this player, formatted via current display mode
+                        chips_now = stacks_map.get(player['name'], player.get('chips', 0))
+                        try:
+                            chip_display = self._format_stack_display(chips_now, hand)
+                        except Exception:
+                            chip_display = chips_now
 
                     self.draw_seat_label(x, y, r, player['name'], chip_display, cy)
 
@@ -1928,6 +1942,54 @@ class HandReplayerGUI:
             return f"${amt:,}"
         except Exception:
             return f"${amt}"
+
+    def _format_stack_display(self, chips_value, hand):
+        """
+        Format a player's stack according to the selected display mode:
+          - Chips: "$<chips>"
+          - BB:    "<stack/bb> BB"
+          - True BB: "<stack/true_bb> tBB"
+          - M:     "<stack / (SB + BB + Ante*players)> M"
+        Falls back to "$<chips>" if inputs are unavailable.
+        """
+        # Non-numeric or special strings (e.g., "sitting out") pass through unchanged
+        if not isinstance(chips_value, (int, float)):
+            return str(chips_value)
+
+        # Mode detection (default to "Chips" if anything goes wrong)
+        try:
+            mode = self.stack_view_mode.get()
+        except Exception:
+            mode = "Chips"
+
+        if mode == "Chips":
+            return f"${chips_value}"
+
+        # Blinds/ante from preflop actions
+        sb, bb, ante = self._extract_blinds_antes(hand)
+
+        if mode == "BB":
+            if bb and bb > 0:
+                return f"{(chips_value / bb):.1f} BB"
+            return f"${chips_value}"
+
+        if mode == "True BB":
+            try:
+                tbb = self._compute_true_bb(hand)
+            except Exception:
+                tbb = None
+            if tbb and tbb > 0:
+                return f"{(chips_value / tbb):.1f} tBB"
+            return f"${chips_value}"
+
+        if mode == "M":
+            players_count = len((hand or {}).get('players', []) or [])
+            denom = (sb or 0) + (bb or 0) + (ante or 0) * players_count
+            if denom > 0:
+                return f"{(chips_value / denom):.1f} M"
+            return f"${chips_value}"
+
+        return f"${chips_value}"
 
     def _extract_blinds_antes(self, hand):
         """
