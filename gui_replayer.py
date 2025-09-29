@@ -4,6 +4,7 @@ import math
 import re
 from ft_hand_parser import FullTiltHandParser
 import os
+import traceback
 
 # Optional high-quality PNG loading/resizing via Pillow
 try:
@@ -416,14 +417,75 @@ class HandReplayerGUI:
             self.parser = FullTiltHandParser(file_path)
             self.parser.parse()
             self.hands = self.parser.hands
+            # Build heroes list safely per hand
             self.heroes = []
             for hand in self.hands:
-                hero = self.hands[1]['hero']
+                hero = (hand or {}).get('hero')
                 self.heroes.append(hero)
-            self.file_label.config(text=f"Loaded: {file_path.split('/')[-1]}")
+            self.file_label.config(text=f"Loaded: {os.path.basename(file_path)}")
             self.populate_hand_selector()
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to parse file:\n{e}")
+            tb = traceback.format_exc()
+            self._show_error_dialog(
+                "Error",
+                f"Failed to parse file:\n{e}",
+                details=tb
+            )
+
+    def _show_error_dialog(self, title: str, message: str, details: str = ""):
+        """
+        Show a modal error dialog with optional scrollable details (e.g., stack trace).
+        """
+        dlg = tk.Toplevel(self.root)
+        dlg.title(title)
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        # Main message
+        lbl = tk.Label(dlg, text=message, anchor="w", justify="left")
+        lbl.pack(fill="x", padx=10, pady=(10, 5))
+
+        # Optional details area
+        if details:
+            frame = tk.Frame(dlg)
+            frame.pack(fill="both", expand=True, padx=10, pady=5)
+            txt = tk.Text(frame, wrap="none", height=20, width=100)
+            txt.insert("1.0", details)
+            txt.config(state="disabled")
+            vsb = tk.Scrollbar(frame, orient="vertical", command=txt.yview)
+            hsb = tk.Scrollbar(frame, orient="horizontal", command=txt.xview)
+            txt.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+            txt.grid(row=0, column=0, sticky="nsew")
+            vsb.grid(row=0, column=1, sticky="ns")
+            hsb.grid(row=1, column=0, sticky="ew")
+            frame.rowconfigure(0, weight=1)
+            frame.columnconfigure(0, weight=1)
+
+            btns = tk.Frame(dlg)
+            btns.pack(fill="x", padx=10, pady=(0, 10))
+
+            def copy_details():
+                try:
+                    self.root.clipboard_clear()
+                    self.root.clipboard_append(details)
+                except Exception:
+                    pass
+
+            tk.Button(btns, text="Copy details", command=copy_details).pack(side="left")
+            tk.Button(btns, text="Close", command=dlg.destroy).pack(side="right")
+        else:
+            tk.Button(dlg, text="Close", command=dlg.destroy).pack(pady=(0, 10))
+
+        # Center the dialog relative to the root window
+        try:
+            dlg.update_idletasks()
+            w = dlg.winfo_width()
+            h = dlg.winfo_height()
+            x = self.root.winfo_x() + (self.root.winfo_width() - w) // 2
+            y = self.root.winfo_y() + (self.root.winfo_height() - h) // 2
+            dlg.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
 
     def populate_hand_selector(self):
         self.hand_selector_canvas.delete("all")

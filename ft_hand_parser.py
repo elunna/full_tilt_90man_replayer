@@ -17,14 +17,31 @@ class FullTiltHandParser:
     def parse(self):
         with open(self.file_path, 'r', encoding='utf-8', errors='replace') as f:
             hand_lines = []
-            for line in f:
+            hand_start_lineno = 1  # track where current hand begins in the file
+            for lineno, raw_line in enumerate(f, start=1):
+                line = raw_line.rstrip('\n')
                 if line.startswith('Full Tilt Poker Game #'):
                     if hand_lines:
-                        self.hands.append(self.parse_hand(hand_lines))
+                        try:
+                            self.hands.append(self.parse_hand(hand_lines))
+                        except Exception as e:
+                            header_preview = hand_lines[0] if hand_lines else "<no header>"
+                            raise RuntimeError(
+                                f"Error parsing hand starting at line {hand_start_lineno}: "
+                                f"{e}\nHeader: {header_preview}"
+                            ) from e
                         hand_lines = []
-                hand_lines.append(line.rstrip('\n'))
+                    hand_start_lineno = lineno
+                hand_lines.append(line)
             if hand_lines:
-                self.hands.append(self.parse_hand(hand_lines))
+                try:
+                    self.hands.append(self.parse_hand(hand_lines))
+                except Exception as e:
+                    header_preview = hand_lines[0] if hand_lines else "<no header>"
+                    raise RuntimeError(
+                        f"Error parsing hand starting at line {hand_start_lineno}: "
+                        f"{e}\nHeader: {header_preview}"
+                    ) from e
 
     def parse_hand(self, lines: List[str]) -> Dict[str, Any]:
         hand_info = {
