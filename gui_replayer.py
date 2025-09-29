@@ -261,11 +261,9 @@ class HandReplayerGUI:
         bottom_frame.pack(side='bottom', fill='x', pady=(4,4))
 
         # Hand selector row
-        selector_label = tk.Label(bottom_frame, text="Select Hand:")
-        selector_label.pack(side='top', anchor='w', padx=(10,0))
         self.hand_selector_frame = tk.Frame(bottom_frame)
         self.hand_selector_frame.pack(side='top', fill='x', padx=(0,10))
-        self.hand_selector_canvas = tk.Canvas(self.hand_selector_frame, height=32, bg="#ddd", highlightthickness=0)
+        self.hand_selector_canvas = tk.Canvas(self.hand_selector_frame, height=72, bg="#ddd", highlightthickness=0)
         self.hand_selector_canvas.pack(side='top', fill='x', expand=True)
         self.hand_boxes = []
 
@@ -503,9 +501,12 @@ class HandReplayerGUI:
     def populate_hand_selector(self):
         self.hand_selector_canvas.delete("all")
         self.hand_boxes.clear()
-        box_size = 26
+        # Keep original width; double the height, and leave room above for tick labels
+        box_w = 26
+        box_h = 52
         gap = 4
-        y = 3
+        # Move boxes down so we have space to draw number ticks above them
+        y = 20
         for i, hand in enumerate(self.hands):
             hero = self.heroes[i] if i < len(self.heroes) else (hand.get('hero') if hand else None)
             result = get_hero_result(hand, hero)
@@ -514,12 +515,24 @@ class HandReplayerGUI:
                 color = "#66cc66"
             elif result < 0:
                 color = "#e76c6c"
-            x = i * (box_size + gap) + gap
-            rect_id = self.hand_selector_canvas.create_rectangle(x, y, x + box_size, y + box_size, fill=color, outline="#333", width=1)
+            x = i * (box_w + gap) + gap
+            rect_id = self.hand_selector_canvas.create_rectangle(
+                x, y, x + box_w, y + box_h, fill=color, outline="#333", width=1
+            )
             self.hand_selector_canvas.tag_bind(rect_id, "<Button-1>", lambda e, idx=i: self.select_hand(idx))
             self.hand_boxes.append(rect_id)
-        total_width = len(self.hands) * (box_size + gap) + gap
-        self.hand_selector_canvas.config(scrollregion=(0,0,total_width,box_size+2*gap))
+
+        # Markers every 10 hands (above the boxes), label 10, 20, 30, ... (omit 1)
+        for i in range(9, len(self.hands), 10):  # zero-based index 9 => hand #10
+            mx = i * (box_w + gap) + gap + (box_w // 2)
+            # small tick just above the boxes
+            self.hand_selector_canvas.create_line(mx, y - 12, mx, y - 4, fill="#666", width=1)
+            # hand number label above the tick
+            self.hand_selector_canvas.create_text(mx, y - 16, text=str(i + 1), fill="#555", font=("Arial", 8))
+
+        total_width = len(self.hands) * (box_w + gap) + gap
+        # Allow extra vertical space to include tick labels above the boxes
+        self.hand_selector_canvas.config(scrollregion=(0, 0, total_width, y + box_h + 12))
         if total_width > self.hand_selector_canvas.winfo_width():
             if not hasattr(self, 'selector_scroll'):
                 self.selector_scroll = tk.Scrollbar(self.hand_selector_frame, orient='horizontal', command=self.hand_selector_canvas.xview)
@@ -571,7 +584,7 @@ class HandReplayerGUI:
         self.display_action_history()
         for i, rect_id in enumerate(self.hand_boxes):
             if i == idx:
-                self.hand_selector_canvas.itemconfig(rect_id, width=3, outline="#222")
+                self.hand_selector_canvas.itemconfig(rect_id, width=5, outline="#222")
             else:
                 self.hand_selector_canvas.itemconfig(rect_id, width=1, outline="#333")
 
