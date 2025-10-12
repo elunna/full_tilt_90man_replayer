@@ -5,6 +5,7 @@ import re
 from ft_hand_parser import FullTiltHandParser
 import os
 import traceback
+import sqlite3
 
 # Optional high-quality PNG loading/resizing via Pillow
 try:
@@ -74,6 +75,21 @@ class HandReplayerGUI:
         self.sitting_out_players = set()
         self._last_action_index = None
 
+        # Notes / DB state
+        self._db = None
+        self._db_path = None
+        self.notes_dirty = False
+        self._loading_notes = False
+        self.notes_text = None
+        self.mistakes_text = None
+        # Hand selector markers for notes
+        self.hand_note_markers = {}
+        # Geometry cache for selector to place/update markers
+        self._selector_box_w = 26
+        self._selector_box_h = 52
+        self._selector_gap = 4
+        self._selector_y_base = 20
+        
         # Info panel state
         self.info_blinds_var = tk.StringVar(value=INFO_PLACEHOLDER)
         self.info_ante_var = tk.StringVar(value=INFO_PLACEHOLDER)
@@ -100,6 +116,9 @@ class HandReplayerGUI:
         self.seat_action_flash = None
         self._seat_action_flash_after = None
 
+        # Initialize database for notes
+        self._init_db()
+        
         self.hand_boxes = []
         self.build_gui()
 
@@ -280,7 +299,47 @@ class HandReplayerGUI:
         self.action_info_text.pack(side='left', fill='both', expand=True)
         playback_scroll.config(command=self.action_info_text.yview)
 
-        # Bottom bar: hand selector and controls
+
+        # Notes panel (below Hand Playback)
+        notes_title = tk.Label(right_frame, text="Notes")
+        notes_title.pack(pady=(0, 0))
+
+        notes_frame = tk.Frame(right_frame)
+        notes_frame.pack(fill='x', padx=10, pady=(0, 10))
+
+        # Layout: Notes label + 2-row text, Mistakes label + 2-row text, then Save/Clear buttons
+        try:
+            notes_frame.columnconfigure(0, weight=1)
+            notes_frame.columnconfigure(1, weight=0)
+            notes_frame.columnconfigure(2, weight=0)
+        except Exception:
+            pass
+
+        tk.Label(notes_frame, text="Notes").grid(row=0, column=0, sticky="w")
+        self.notes_text = tk.Text(notes_frame, height=2, width=48, wrap='word')
+        self.notes_text.grid(row=1, column=0, columnspan=3, sticky="we", pady=(0, 6))
+
+        tk.Label(notes_frame, text="Mistakes").grid(row=2, column=0, sticky="w")
+        self.mistakes_text = tk.Text(notes_frame, height=2, width=48, wrap='word')
+        self.mistakes_text.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 6))
+
+        save_btn = tk.Button(notes_frame, text="Save", command=self.save_current_hand_notes)
+        save_btn.grid(row=4, column=1, sticky="e", padx=(0, 6))
+        clear_btn = tk.Button(notes_frame, text="Clear", command=self.clear_notes)
+        clear_btn.grid(row=4, column=2, sticky="e")
+
+        # Mark notes as dirty on edit
+        def _bind_dirty(widget):
+            if widget is None:
+                return
+            try:
+                widget.bind("<KeyRelease>", self.on_notes_changed)
+            except Exception:
+                pass
+        _bind_dirty(self.notes_text)
+        _bind_dirty(self.mistakes_text)
+
+    # Bottom bar: hand selector and controls
         bottom_frame = tk.Frame(self.root)
         bottom_frame.pack(side='bottom', fill='x', pady=(4,4))
 
@@ -561,12 +620,28 @@ class HandReplayerGUI:
     def populate_hand_selector(self):
         self.hand_selector_canvas.delete("all")
         self.hand_boxes.clear()
+        self.hand_note_markers.clear()
         # Keep original width; double the height, and leave room above for tick labels
         box_w = 26
         box_h = 52
         gap = 4
         # Move boxes down so we have space to draw number ticks above them
         y = 20
+
+        # Cache geometry for later updates of '#' markers
+        self._selector_box_w = box_w
+        self._selector_box_h = box_h
+        self._selector_gap = gap
+        self._selector_y_base = y
+
+        # Pre-compute which hands have notes in DB (by Game #)
+        hand_ids = []
+        for hand in self.hands:
+            header = (hand or {}).get('header') or ""
+            meta = self._extract_session_info(header)
+            hand_ids.append(meta.get("hand_no") or "")
+        hands_with_notes = self._hands_with_notes_set(hand_ids) if hand_ids else set()
+        
         for i, hand in enumerate(self.hands):
             hero = self.heroes[i] if i < len(self.heroes) else (hand.get('hero') if hand else None)
             result = get_hero_result(hand, hero)
@@ -605,6 +680,14 @@ class HandReplayerGUI:
             self.select_hand(0)
 
     def select_hand(self, idx):
+        # Auto-save notes for the currently selected hand (if any changes)
+        try:
+            prev_idx = getattr(self, 'current_hand_index', None)
+        except Exception:
+            prev_idx = None
+        if prev_idx is not None and 0 <= prev_idx < len(self.hands):
+            self.maybe_auto_save_notes_for_hand(prev_idx)
+
         self.current_hand_index = idx
         hand = self.hands[idx]
         self.folded_players = set()
@@ -648,6 +731,14 @@ class HandReplayerGUI:
             else:
                 self.hand_selector_canvas.itemconfig(rect_id, width=1, outline="#333")
 
+        # Load notes for the newly selected hand
+        self.load_notes_for_current_hand()
+        # Update '#' markers for previous and current hands (in case auto-save changed presence)
+        if prev_idx is not None and 0 <= prev_idx < len(self.hands):
+            self._update_hand_note_marker(prev_idx)
+        if idx is not None and 0 <= idx < len(self.hands):
+            self._update_hand_note_marker(idx)
+        
     def process_initial_forced_bets(self, hand):
         """
         Process posting of antes and blinds using the existing process_action logic.
@@ -2563,6 +2654,277 @@ class HandReplayerGUI:
 
         # Update SPR for hero using the pot for the next state on this street.
         _set_spr_for_state(hand, self.current_street, max(-1, cur_idx), pot_for_next)
+
+    # ====== Notes / SQLite helpers ======
+    def _init_db(self):
+        """
+        Initialize a central SQLite database at ~/.full_tilt_90man_replayer/notes.sqlite3
+        with a notes table keyed by Game # (hand_id).
+        """
+        try:
+            home = os.path.expanduser("~")
+            db_dir = os.path.join(home, ".full_tilt_90man_replayer")
+            os.makedirs(db_dir, exist_ok=True)
+            self._db_path = os.path.join(db_dir, "notes.sqlite3")
+            self._db = sqlite3.connect(self._db_path)
+            self._db.execute("""
+                             CREATE TABLE IF NOT EXISTS notes (
+                                                                  hand_id   TEXT PRIMARY KEY,
+                                                                  note      TEXT,
+                                                                  mistakes  TEXT,
+                                                                  updated_at TEXT DEFAULT (datetime('now'))
+                                 )
+                             """)
+            self._db.commit()
+        except Exception as e:
+            # Non-fatal; notes features will be disabled if DB init fails
+            self._db = None
+            try:
+                print(f"Failed to initialize notes DB: {e}")
+            except Exception:
+                pass
+
+    def _db_conn(self):
+        return self._db
+
+    def _get_hand_id_for_index(self, hand_index):
+        try:
+            if hand_index is None or hand_index < 0 or hand_index >= len(self.hands):
+                return ""
+            hand = self.hands[hand_index]
+            header = (hand or {}).get('header') or ""
+            meta = self._extract_session_info(header)
+            return meta.get("hand_no") or ""
+        except Exception:
+            return ""
+
+    def _current_hand_id(self):
+        return self._get_hand_id_for_index(getattr(self, 'current_hand_index', None))
+
+    def _load_notes_from_db(self, hand_id):
+        """
+        Return (note, mistakes) strings for a given hand_id. Empty strings if not found.
+        """
+        try:
+            conn = self._db_conn()
+            if not conn or not hand_id:
+                return "", ""
+            cur = conn.execute("SELECT note, mistakes FROM notes WHERE hand_id = ?", (hand_id,))
+            row = cur.fetchone()
+            if not row:
+                return "", ""
+            note_val = row[0] if row[0] is not None else ""
+            mistakes_val = row[1] if row[1] is not None else ""
+            return str(note_val), str(mistakes_val)
+        except Exception:
+            return "", ""
+
+    def _save_notes_to_db(self, hand_id, note, mistakes):
+        """
+        Upsert the notes record for hand_id. If both fields are empty, deletes the record.
+        """
+        try:
+            conn = self._db_conn()
+            if not conn or not hand_id:
+                return
+            n = (note or "").strip()
+            m = (mistakes or "").strip()
+            if n == "" and m == "":
+                conn.execute("DELETE FROM notes WHERE hand_id = ?", (hand_id,))
+                conn.commit()
+                return
+            conn.execute(
+                """
+                INSERT INTO notes (hand_id, note, mistakes, updated_at)
+                VALUES (?, ?, ?, datetime('now'))
+                    ON CONFLICT(hand_id) DO UPDATE SET
+                    note = excluded.note,
+                                                mistakes = excluded.mistakes,
+                                                updated_at = excluded.updated_at
+                """,
+                (hand_id, n, m),
+            )
+            conn.commit()
+        except Exception:
+            pass
+
+    def _hand_has_note_in_db(self, hand_id):
+        """
+        True if there is a non-empty note or mistakes saved for hand_id.
+        """
+        try:
+            conn = self._db_conn()
+            if not conn or not hand_id:
+                return False
+            cur = conn.execute("SELECT note, mistakes FROM notes WHERE hand_id = ?", (hand_id,))
+            row = cur.fetchone()
+            if not row:
+                return False
+            n = (row[0] or "").strip()
+            m = (row[1] or "").strip()
+            return (n != "") or (m != "")
+        except Exception:
+            return False
+
+    def _hands_with_notes_set(self, hand_ids):
+        """
+        Given a list of hand_ids, return a set of those that have non-empty records.
+        """
+        out = set()
+        try:
+            conn = self._db_conn()
+            if not conn:
+                return out
+            # Filter empties
+            ids = [hid for hid in (hand_ids or []) if hid]
+            if not ids:
+                return out
+            # Build a parameterized IN clause
+            q_marks = ",".join(["?"] * len(ids))
+            cur = conn.execute(f"SELECT hand_id, note, mistakes FROM notes WHERE hand_id IN ({q_marks})", ids)
+            for hand_id, note, mistakes in cur.fetchall() or []:
+                n = (note or "").strip()
+                m = (mistakes or "").strip()
+                if (n != "") or (m != ""):
+                    out.add(hand_id)
+        except Exception:
+            return out
+        return out
+
+    def on_notes_changed(self, _event=None):
+        if self._loading_notes:
+            return
+        self.notes_dirty = True
+
+    def load_notes_for_current_hand(self):
+        """
+        Load notes for the currently selected hand into the Notes and Mistakes text widgets.
+        """
+        if not (self.notes_text and self.mistakes_text):
+            return
+        hand_id = self._current_hand_id()
+        note_val, mistakes_val = self._load_notes_from_db(hand_id)
+        self._loading_notes = True
+        try:
+            self.notes_text.delete("1.0", tk.END)
+            self.notes_text.insert("1.0", note_val or "")
+            self.mistakes_text.delete("1.0", tk.END)
+            self.mistakes_text.insert("1.0", mistakes_val or "")
+            self.notes_dirty = False
+        finally:
+            self._loading_notes = False
+
+    def save_current_hand_notes(self):
+        """
+        Explicit save button action.
+        """
+        hand_id = self._current_hand_id()
+        if not hand_id:
+            return
+        note_val = ""
+        mistakes_val = ""
+        if self.notes_text:
+            note_val = self.notes_text.get("1.0", "end-1c")
+        if self.mistakes_text:
+            mistakes_val = self.mistakes_text.get("1.0", "end-1c")
+        self._save_notes_to_db(hand_id, note_val, mistakes_val)
+        self.notes_dirty = False
+        # Update marker for current hand
+        idx = getattr(self, 'current_hand_index', None)
+        if idx is not None:
+            self._update_hand_note_marker(idx)
+
+    def clear_notes(self):
+        """
+        Clear both fields and remove the record immediately.
+        """
+        if self.notes_text:
+            self.notes_text.delete("1.0", tk.END)
+        if self.mistakes_text:
+            self.mistakes_text.delete("1.0", tk.END)
+        hand_id = self._current_hand_id()
+        if hand_id:
+            try:
+                conn = self._db_conn()
+                if conn:
+                    conn.execute("DELETE FROM notes WHERE hand_id = ?", (hand_id,))
+                    conn.commit()
+            except Exception:
+                pass
+        self.notes_dirty = False
+        # Update marker for current hand
+        idx = getattr(self, 'current_hand_index', None)
+        if idx is not None:
+            self._update_hand_note_marker(idx)
+
+    def maybe_auto_save_notes_for_hand(self, hand_index):
+        """
+        Auto-save notes if dirty when switching away from a hand.
+        Uses the current content of the Note/Mistakes widgets and saves them under the hand_index provided.
+        """
+        if not self.notes_dirty:
+            return
+        hand_id = self._get_hand_id_for_index(hand_index)
+        if not hand_id:
+            self.notes_dirty = False
+            return
+        note_val = ""
+        mistakes_val = ""
+        if self.notes_text:
+            note_val = self.notes_text.get("1.0", "end-1c")
+        if self.mistakes_text:
+            mistakes_val = self.mistakes_text.get("1.0", "end-1c")
+        self._save_notes_to_db(hand_id, note_val, mistakes_val)
+        self.notes_dirty = False
+
+    def _update_hand_note_marker(self, idx):
+        """
+        Add or remove the '#' marker for a given hand index depending on DB state.
+        """
+        if idx is None or idx < 0 or idx >= len(self.hands):
+            return
+        # Remove existing marker if present
+        old = self.hand_note_markers.pop(idx, None)
+        if old:
+            try:
+                self.hand_selector_canvas.delete(old)
+            except Exception:
+                pass
+        # Recreate if needed
+        hand_id = self._get_hand_id_for_index(idx)
+        if not (hand_id and self._hand_has_note_in_db(hand_id)):
+            return
+        # Compute rectangle top-left for this index
+        x = idx * (self._selector_box_w + self._selector_gap) + self._selector_gap
+        y = self._selector_y_base
+        try:
+            mark_id = self.hand_selector_canvas.create_text(
+                x + 4, y + 4, text="#", fill="#111", font=("Arial", 12, "bold"), anchor="nw"
+            )
+            self.hand_note_markers[idx] = mark_id
+        except Exception:
+            pass
+
+    def on_close(self):
+        """
+        Save notes if dirty and close the application.
+        """
+        try:
+            # Auto-save current hand's notes if dirty
+            cur_idx = getattr(self, 'current_hand_index', None)
+            if cur_idx is not None:
+                self.maybe_auto_save_notes_for_hand(cur_idx)
+        except Exception:
+            pass
+        try:
+            if self._db:
+                self._db.close()
+        except Exception:
+            pass
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
 
     def _extract_session_info(self, header: str):
         """
