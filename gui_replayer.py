@@ -133,6 +133,12 @@ class HandReplayerGUI:
 
     def bind_keys(self):
         """Bind arrow keys: Left/Right = hands; Up/Down = actions."""
+        # Global save shortcut for notes
+        try:
+            self.root.bind_all("<Control-s>", lambda e: self.save_current_hand_notes())
+            self.root.bind_all("<Command-s>", lambda e: self.save_current_hand_notes())  # macOS
+        except Exception:
+            pass
         # Hands
         self.root.bind("<Left>", lambda e: self.navigate_hands(-1))  # previous hand
         self.root.bind("<Right>", lambda e: self.navigate_hands(1))  # next hand
@@ -323,7 +329,7 @@ class HandReplayerGUI:
         self.mistakes_text = tk.Text(notes_frame, height=2, width=48, wrap='word')
         self.mistakes_text.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 6))
 
-        save_btn = tk.Button(notes_frame, text="Save", command=self.save_current_hand_notes)
+        save_btn = tk.Button(notes_frame, text="Save (Ctrl+S)", command=self.save_current_hand_notes)
         save_btn.grid(row=4, column=1, sticky="e", padx=(0, 6))
         clear_btn = tk.Button(notes_frame, text="Clear", command=self.clear_notes)
         clear_btn.grid(row=4, column=2, sticky="e")
