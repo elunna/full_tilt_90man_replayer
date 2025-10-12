@@ -682,8 +682,13 @@ class HandReplayerGUI:
         else:
             if hasattr(self, 'selector_scroll'):
                 self.selector_scroll.pack_forget()
-        if self.hands:
-            self.select_hand(0)
+        # Ensure note markers render immediately after the selector is fully drawn.
+        try:
+            # Schedule after idle so canvas items exist before we place markers
+            self.root.after_idle(self.refresh_all_note_markers)
+        except Exception:
+            # Fallback: do it synchronously
+            pass
 
     def select_hand(self, idx):
         # Auto-save notes for the currently selected hand (if any changes)
@@ -2781,21 +2786,22 @@ class HandReplayerGUI:
             conn = self._db_conn()
             if not conn:
                 return out
-            # Filter empties
-            ids = [hid for hid in (hand_ids or []) if hid]
-            if not ids:
-                return out
-            # Build a parameterized IN clause
-            q_marks = ",".join(["?"] * len(ids))
-            cur = conn.execute(f"SELECT hand_id, note, mistakes FROM notes WHERE hand_id IN ({q_marks})", ids)
-            for hand_id, note, mistakes in cur.fetchall() or []:
-                n = (note or "").strip()
-                m = (mistakes or "").strip()
-                if (n != "") or (m != ""):
-                    out.add(hand_id)
+            # Pull all note-bearing IDs from DB and intersect in Python
+            cur = conn.execute(
+                """
+                SELECT hand_id
+                FROM notes
+                WHERE COALESCE(TRIM(note),'') <> '' OR COALESCE(TRIM(mistakes),'') <> ''
+                """
+            )
+            db_ids = {row[0] for row in (cur.fetchall() or []) if row and row[0]}
+            if not hand_ids:
+                return db_ids
+            ids_set = {hid for hid in (hand_ids or []) if hid}
+            return db_ids.intersection(ids_set)
         except Exception:
+            # Fall back to empty; markers will still appear as you visit hands via per-hand checks
             return out
-        return out
 
     def on_notes_changed(self, _event=None):
         if self._loading_notes:
@@ -3064,6 +3070,18 @@ class HandReplayerGUI:
                     break
             if not prev_street_found:
                 self.prev_button.config(state='disabled')
+
+    def refresh_all_note_markers(self):
+        """
+        Re-evaluate and draw '#' markers for all hands currently shown
+        in the hand selector. Intended to be called once the canvas is laid out.
+        """
+        try:
+            count = len(self.hands) if self.hands else 0
+            for i in range(count):
+                self._update_hand_note_marker(i)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     root = tk.Tk()
