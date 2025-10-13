@@ -47,6 +47,7 @@ class OpeningRangeDrillApp:
         self._build_ui()
         self._start()
         self._fit_to_contents()
+        self.root.bind("<Escape>", self._on_escape)  # ESC to immediately exit
 
     def _build_ui(self):
         outer = tk.Frame(self.root, padx=12, pady=12)
@@ -239,6 +240,9 @@ class OpeningRangeDrillApp:
             f"Grade: {summary['grade']}\n"
         )
         messagebox.showinfo("Drill Summary", msg, parent=self.root)
+
+    def _on_escape(self, event=None):
+        self._on_close()
 
     def _on_close(self):
         self._cancel_pending_advance()
