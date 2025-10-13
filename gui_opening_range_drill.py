@@ -60,9 +60,9 @@ class OpeningRangeDrillApp:
         hand_frame = tk.Frame(outer, pady=24)
         hand_frame.pack(fill="both", expand=True)
 
-        # placeholder label (we'll swap to explicit colored labels for suits)
-        self.hand_label = tk.Label(hand_frame, text="— —", font=("Segoe UI", 40))
-        self.hand_label.pack()
+        # persistent card frame to avoid layout shifting between questions
+        self.card_frame = tk.Frame(hand_frame)
+        self.card_frame.pack()
 
         # Feedback
         self.feedback_var = tk.StringVar(value="")
@@ -110,22 +110,17 @@ class OpeningRangeDrillApp:
         def color_for(card):
             return "#CC0000" if card[1] in RED_SUITS else "#000000"
 
-        # Replace placeholder with per-card labels for suit coloring
-        for w in getattr(self, "_card_labels", []):
+        # Clear previous card labels and render into the persistent frame
+        for w in self.card_frame.winfo_children():
             w.destroy()
-        self._card_labels = []
 
-        hand_frame = self.hand_label.master
-        self.hand_label.pack_forget()
-        card_frame = tk.Frame(hand_frame)
-        card_frame.pack()
-
-        l1 = tk.Label(card_frame, text=txt1, font=("Segoe UI", 40), fg=color_for(c1))
-        l2 = tk.Label(card_frame, text="  ", font=("Segoe UI", 40))
-        l3 = tk.Label(card_frame, text=txt2, font=("Segoe UI", 40), fg=color_for(c2))
+        l1 = tk.Label(self.card_frame, text=txt1, font=("Segoe UI", 40), fg=color_for(c1))
+        l2 = tk.Label(self.card_frame, text="  ", font=("Segoe UI", 40))
+        l3 = tk.Label(self.card_frame, text=txt2, font=("Segoe UI", 40), fg=color_for(c2))
         l1.pack(side="left")
         l2.pack(side="left")
         l3.pack(side="left")
+        # track current labels if needed later
         self._card_labels = [l1, l2, l3]
 
         self.feedback_var.set("")
