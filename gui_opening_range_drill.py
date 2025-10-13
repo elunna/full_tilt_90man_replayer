@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
-from typing import Optional, Optional as _Opt
+from typing import Optional
 
 try:
     from PIL import Image, ImageTk  # noqa: F401
@@ -34,20 +34,16 @@ class OpeningRangeDrillApp:
         self.root = master or tk.Tk()
         self.root.title("Opening Range Drill (Raise/Fold)")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-
-        # Auto-advance state must be initialized before any rendering occurs
-        self._advance_after_id: Optional[str] = None
-        self._raise_defaults = None
-        self._fold_defaults = None
+        self.root.bind("<Escape>", self._on_escape)  # ESC to immediately exit
 
         self.drill = OpeningRangeDrill(questions=questions)
         self.current = None
         self.answered = False
+        self._last_feedback = None  # {"correct": bool, "recommended": "raise"|"fold"}
 
         self._build_ui()
         self._start()
         self._fit_to_contents()
-        self.root.bind("<Escape>", self._on_escape)  # ESC to immediately exit
 
     def _build_ui(self):
         outer = tk.Frame(self.root, padx=12, pady=12)
@@ -70,12 +66,16 @@ class OpeningRangeDrillApp:
         self.card_frame = tk.Frame(hand_frame)
         self.card_frame.pack()
 
-        # Feedback (large, centered) and recommended action (underneath)
+        # Feedback (large, centered) for the PREVIOUS hand and recommended action (underneath)
         self.feedback_var = tk.StringVar(value="")
         self.feedback_label = tk.Label(outer, textvariable=self.feedback_var, font=("Segoe UI", 32))
         self.feedback_label.pack(pady=(4, 0))
 
-        # Controls
+        self.recommended_var = tk.StringVar(value="")
+        self.recommended_label = tk.Label(outer, textvariable=self.recommended_var, font=("Segoe UI", 14))
+        self.recommended_label.pack(pady=(4, 0))
+
+        # Controls (no Next, no End — ESC or window close to exit)
         controls = tk.Frame(outer, pady=12)
         controls.pack()
 
@@ -84,23 +84,6 @@ class OpeningRangeDrillApp:
 
         self.fold_btn = tk.Button(controls, text="Fold", width=12, command=self._on_fold)
         self.fold_btn.grid(row=0, column=1, padx=6)
-
-        # Capture default button styles for later reset (themes may ignore)
-        self._raise_defaults = {
-            "bg": self.raise_btn.cget("bg"),
-            "fg": self.raise_btn.cget("fg"),
-            "activebackground": self.raise_btn.cget("activebackground") if "activebackground" in self.raise_btn.keys() else None,
-        }
-        self._fold_defaults = {
-            "bg": self.fold_btn.cget("bg"),
-            "fg": self.fold_btn.cget("fg"),
-            "activebackground": self.fold_btn.cget("activebackground") if "activebackground" in self.fold_btn.keys() else None,
-        }
-
-        # Recommended action label (centered under feedback)
-        self.recommended_var = tk.StringVar(value="")
-        self.recommended_label = tk.Label(outer, textvariable=self.recommended_var, font=("Segoe UI", 14))
-        self.recommended_label.pack(pady=(4, 0))
 
     def _fit_to_contents(self):
         """Ensure the window is sized to fit all widgets so nothing is clipped."""
@@ -138,92 +121,48 @@ class OpeningRangeDrillApp:
         l3.pack(side="left")
         self._card_labels = [l1, l2, l3]
 
-        self.feedback_var.set("")
-        self.recommended_var.set("")
+        # Show feedback from the PREVIOUS hand (if any)
+        if self._last_feedback is None:
+            self.feedback_var.set("")
+            self.recommended_var.set("")
+        else:
+            self.feedback_var.set("correct" if self._last_feedback["correct"] else "X")
+            self.feedback_label.config(fg="#000000")
+            self.recommended_var.set(self._last_feedback["recommended"].upper())
+
+        # Enable actions each question
         self.raise_btn.config(state="normal")
         self.fold_btn.config(state="normal")
-        self._reset_button_styles()
-        self._cancel_pending_advance()
+
         self._fit_to_contents()
 
-    def _color_button(self, btn: tk.Button, bg: str, fg: str = "white"):
-        """Best-effort button color change (some themes may ignore)."""
-        try:
-            btn.config(bg=bg, fg=fg)
-            if "activebackground" in btn.keys():
-                btn.config(activebackground=bg)
-        except Exception:
-            pass
+    def _after_answer(self, correct: bool, q_snapshot):
+        # Store feedback for display under the NEXT hand
+        self._last_feedback = {
+            "correct": correct,
+            "recommended": q_snapshot["answer"],
+        }
 
-    def _reset_button_styles(self):
-        if self._raise_defaults:
-            try:
-                self.raise_btn.config(bg=self._raise_defaults["bg"], fg=self._raise_defaults["fg"])
-                if self._raise_defaults.get("activebackground") and "activebackground" in self.raise_btn.keys():
-                    self.raise_btn.config(activebackground=self._raise_defaults["activebackground"])
-            except Exception:
-                pass
-        if self._fold_defaults:
-            try:
-                self.fold_btn.config(bg=self._fold_defaults["bg"], fg=self._fold_defaults["fg"])
-                if self._fold_defaults.get("activebackground") and "activebackground" in self.fold_btn.keys():
-                    self.fold_btn.config(activebackground=self._fold_defaults["activebackground"])
-            except Exception:
-                pass
-
-    def _cancel_pending_advance(self):
-        if self._advance_after_id is not None:
-            try:
-                self.root.after_cancel(self._advance_after_id)
-            except Exception:
-                pass
-            self._advance_after_id = None
-
-    def _advance_next(self):
-        self._advance_after_id = None
+        # Immediately move to the next question (no pause)
         q = self.drill.next_question()
         if q is None:
             self._show_summary()
             return
         self._render_question(q)
 
-    def _after_answer(self, correct: bool, q_snapshot, clicked_btn: Optional[tk.Button] = None):
-        self.answered = True
-        self.raise_btn.config(state="disabled")
-        self.fold_btn.config(state="disabled")
-
-        # If the caller didn't specify which button was clicked, fall back to the recommended action's button.
-        if clicked_btn is None:
-            clicked_btn = self.raise_btn if q_snapshot.get("answer") == "raise" else self.fold_btn
-
-        # Visual feedback only: highlight the clicked action and pause
-        if correct:
-            self._color_button(clicked_btn, "#127A0A", "white")  # green
-            delay = 1000
-        else:
-            self._color_button(clicked_btn, "#CC0000", "white")  # red
-            delay = 2000
-
-        # Keep text feedback minimal; reveal key and recommendation for learning
-        self.feedback_var.set("correct" if correct else "X")
-        self.feedback_label.config(fg="#000000")  # keep neutral text color; buttons convey color
-        self.recommended_var.set(q_snapshot['answer'].upper())
-
-        # Schedule auto-advance
-        self._cancel_pending_advance()
-        self._advance_after_id = self.root.after(delay, self._advance_next)
-
     def _on_raise(self):
         if self.answered:
             return
+        self.answered = True
         correct, snap = self.drill.submit("raise")
-        self._after_answer(correct, snap, self.raise_btn)
+        self._after_answer(correct, snap)
 
     def _on_fold(self):
         if self.answered:
             return
+        self.answered = True
         correct, snap = self.drill.submit("fold")
-        self._after_answer(correct, snap, self.fold_btn)
+        self._after_answer(correct, snap)
 
     def _show_summary(self):
         summary = self.drill.summary()
@@ -240,7 +179,6 @@ class OpeningRangeDrillApp:
         self._on_close()
 
     def _on_close(self):
-        self._cancel_pending_advance()
         self.root.destroy()
 
     def run(self):
