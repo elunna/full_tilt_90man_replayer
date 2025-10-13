@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
-from typing import Optional
+from typing import Optional, Optional as _Opt
 
 try:
     from PIL import Image, ImageTk  # noqa: F401
@@ -69,13 +69,13 @@ class OpeningRangeDrillApp:
         self.card_frame = tk.Frame(hand_frame)
         self.card_frame.pack()
 
-        # Feedback
+        # Feedback (large, centered) and recommended action (underneath)
         self.feedback_var = tk.StringVar(value="")
-        self.feedback_label = tk.Label(outer, textvariable=self.feedback_var, font=("Segoe UI", 12))
-        self.feedback_label.pack()
+        self.feedback_label = tk.Label(outer, textvariable=self.feedback_var, font=("Segoe UI", 32))
+        self.feedback_label.pack(pady=(4, 0))
 
         # Controls
-        controls = tk.Frame(outer, pady=8)
+        controls = tk.Frame(outer, pady=12)
         controls.pack()
 
         self.raise_btn = tk.Button(controls, text="Raise", width=12, command=self._on_raise)
@@ -99,11 +99,10 @@ class OpeningRangeDrillApp:
         # End Drill button (no Next button; auto-advance is used)
         self.end_btn = tk.Button(controls, text="End Drill", width=12, command=self._on_end)
         self.end_btn.grid(row=0, column=2, padx=6)
-
-        # Footer: reveal key/recommendation after answering
-        self.key_var = tk.StringVar(value="")
-        self.key_label = tk.Label(outer, textvariable=self.key_var, font=("Segoe UI", 10), fg="#666666")
-        self.key_label.pack(pady=(8, 0))
+        # Recommended action label (centered under feedback)
+        self.recommended_var = tk.StringVar(value="")
+        self.recommended_label = tk.Label(outer, textvariable=self.recommended_var, font=("Segoe UI", 14))
+        self.recommended_label.pack(pady=(4, 0))
 
     def _fit_to_contents(self):
         """Ensure the window is sized to fit all widgets so nothing is clipped."""
@@ -142,7 +141,7 @@ class OpeningRangeDrillApp:
         self._card_labels = [l1, l2, l3]
 
         self.feedback_var.set("")
-        self.key_var.set("")
+        self.recommended_var.set("")
         self.raise_btn.config(state="normal")
         self.fold_btn.config(state="normal")
         self._reset_button_styles()
@@ -208,9 +207,9 @@ class OpeningRangeDrillApp:
             delay = 2000
 
         # Keep text feedback minimal; reveal key and recommendation for learning
-        self.feedback_var.set("")
-        self.feedback_label.config(fg="#000000")
-        self.key_var.set(f"Hand key: {q_snapshot['key']} • Recommended: {q_snapshot['answer'].upper()}")
+        self.feedback_var.set("correct" if correct else "X")
+        self.feedback_label.config(fg="#000000")  # keep neutral text color; buttons convey color
+        self.recommended_var.set(q_snapshot['answer'].upper())
 
         # Schedule auto-advance
         self._cancel_pending_advance()
