@@ -217,22 +217,36 @@ class OpeningRangeDrillApp:
         outer = tk.Frame(self.root, padx=12, pady=12)
         outer.pack(fill="both", expand=True)
 
-        # Header: progress + position
+        # Header: progress on the left (removed "Position:" text)
         header = tk.Frame(outer)
         header.pack(fill="x")
         self.progress_var = tk.StringVar(value="Q 0/20")
-        self.pos_var = tk.StringVar(value="Position: —")
         tk.Label(header, textvariable=self.progress_var, font=("Segoe UI", 12, "bold")).pack(side="left")
-        tk.Label(header, text="   ").pack(side="left")
-        tk.Label(header, textvariable=self.pos_var, font=("Segoe UI", 12)).pack(side="left")
+        tk.Label(header, text="").pack(side="left", expand=True)
 
-        # Hand area
+        # Hand area container
         hand_frame = tk.Frame(outer, pady=24)
         hand_frame.pack(fill="both", expand=True)
 
-        # Persistent card frame to avoid layout shifting between questions
-        self.card_frame = tk.Frame(hand_frame)
-        self.card_frame.pack()
+        # Inner container that will be centered; holds big position (left) and cards (right)
+        self.hand_inner = tk.Frame(hand_frame)
+        # expand=True centers the child when not filling
+        self.hand_inner.pack(expand=True)
+
+        # Big position label (left), right-aligned within its own box (no fixed width so it doesn't skew centering)
+        self.pos_big_var = tk.StringVar(value="")
+        self.pos_big_label = tk.Label(
+            self.hand_inner,
+            textvariable=self.pos_big_var,
+            font=("Segoe UI", 36, "bold"),
+            anchor="e",
+            justify="right",
+        )
+        self.pos_big_label.pack(side="left")
+
+        # Small padding between position and cards
+        self.card_frame = tk.Frame(self.hand_inner)
+        self.card_frame.pack(side="left", padx=55)
 
         # Controls (no Next, no End — ESC or window close to exit)
         controls = tk.Frame(outer, pady=12)
@@ -252,7 +266,7 @@ class OpeningRangeDrillApp:
 
     def _fit_to_contents(self):
         """
-        Lock the window size ONCE to ~75% larger than required content.
+        Lock the window size ONCE, with a narrower width multiplier to avoid excessive width.
         Subsequent content changes will NOT alter the window size.
         """
         if self._size_locked:
@@ -260,9 +274,9 @@ class OpeningRangeDrillApp:
         self.root.update_idletasks()
         req_w = self.root.winfo_reqwidth()
         req_h = self.root.winfo_reqheight()
-        # Scale by ~75% and apply once
-        w = max(640, int(req_w * 1.75))
-        h = max(480, int(req_h * 1.75))
+        # Make width less aggressive; keep height comfy
+        w = max(560, int(req_w * 1.35))
+        h = max(480, int(req_h * 1.50))
         self._fixed_w, self._fixed_h = w, h
         try:
             self.root.geometry(f"{w}x{h}")
@@ -286,9 +300,11 @@ class OpeningRangeDrillApp:
         total = self.drill.questions
         done = self.drill.result.total  # answered so far
         self.progress_var.set(f"Q {done + 1}/{total}")
-        self.pos_var.set(f"Position: {q['position']}")
 
         c1, c2 = q["hero_cards"]
+
+        # Update the big position label text
+        self.pos_big_var.set(q["position"])
 
         # Clear and render cards into the persistent frame
         for w in self.card_frame.winfo_children():
