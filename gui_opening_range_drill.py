@@ -1,4 +1,3 @@
-import os
 import tkinter as tk
 from tkinter import messagebox
 from typing import Optional
@@ -22,31 +21,30 @@ def render_card_text(card: str) -> str:
     return f"{card[0]}{SUIT_SYM.get(card[1], card[1])}"
 
 
-class OpeningRangeDrillWindow:
+class OpeningRangeDrillApp:
     """
-    Toplevel window that runs a 20-question opening-range Raise/Fold drill.
+    Standalone window that runs a 20-question opening-range Raise/Fold drill.
     Positions are random. No timer. Summary/grade at the end.
+
+    Run with: python gui_opening_range_drill.py
     """
 
-    def __init__(self, root, questions: int = 20):
-        self.root = root
-        self.win = tk.Toplevel(root)
-        self.win.title("Opening Range Drill (Raise/Fold)")
-        self.win.geometry("520x360")
-        self.win.transient(root)
-        self.win.grab_set()
-        self.win.protocol("WM_DELETE_WINDOW", self._on_close)
+    def __init__(self, master: Optional[tk.Tk] = None, questions: int = 20):
+        self._own_root = master is None
+        self.root = master or tk.Tk()
+        self.root.title("Opening Range Drill (Raise/Fold)")
+        self.root.geometry("560x380")
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.drill = OpeningRangeDrill(questions=questions)
         self.current = None
         self.answered = False
 
         self._build_ui()
-        # start the drill immediately
         self._start()
 
     def _build_ui(self):
-        outer = tk.Frame(self.win, padx=12, pady=12)
+        outer = tk.Frame(self.root, padx=12, pady=12)
         outer.pack(fill="both", expand=True)
 
         # Header: progress + position
@@ -62,6 +60,7 @@ class OpeningRangeDrillWindow:
         hand_frame = tk.Frame(outer, pady=24)
         hand_frame.pack(fill="both", expand=True)
 
+        # placeholder label (we'll swap to explicit colored labels for suits)
         self.hand_label = tk.Label(hand_frame, text="— —", font=("Segoe UI", 40))
         self.hand_label.pack()
 
@@ -74,19 +73,19 @@ class OpeningRangeDrillWindow:
         controls = tk.Frame(outer, pady=8)
         controls.pack()
 
-        self.raise_btn = tk.Button(controls, text="Raise", width=10, command=self._on_raise)
+        self.raise_btn = tk.Button(controls, text="Raise", width=12, command=self._on_raise)
         self.raise_btn.grid(row=0, column=0, padx=6)
 
-        self.fold_btn = tk.Button(controls, text="Fold", width=10, command=self._on_fold)
+        self.fold_btn = tk.Button(controls, text="Fold", width=12, command=self._on_fold)
         self.fold_btn.grid(row=0, column=1, padx=6)
 
-        self.next_btn = tk.Button(controls, text="Next", width=10, command=self._on_next, state="disabled")
+        self.next_btn = tk.Button(controls, text="Next", width=12, command=self._on_next, state="disabled")
         self.next_btn.grid(row=0, column=2, padx=6)
 
-        self.end_btn = tk.Button(controls, text="End Drill", width=10, command=self._on_end)
+        self.end_btn = tk.Button(controls, text="End Drill", width=12, command=self._on_end)
         self.end_btn.grid(row=0, column=3, padx=6)
 
-        # Footer (optional): key reveal
+        # Footer: reveal key/recommendation after answering
         self.key_var = tk.StringVar(value="")
         self.key_label = tk.Label(outer, textvariable=self.key_var, font=("Segoe UI", 10), fg="#666666")
         self.key_label.pack(pady=(8, 0))
@@ -111,7 +110,7 @@ class OpeningRangeDrillWindow:
         def color_for(card):
             return "#CC0000" if card[1] in RED_SUITS else "#000000"
 
-        # Use two labels to color suits independently
+        # Replace placeholder with per-card labels for suit coloring
         for w in getattr(self, "_card_labels", []):
             w.destroy()
         self._card_labels = []
@@ -177,12 +176,16 @@ class OpeningRangeDrillWindow:
             f"Score: {summary['correct']} / {summary['total']}  ({summary['percent']}%)\n"
             f"Grade: {summary['grade']}\n"
         )
-        messagebox.showinfo("Drill Summary", msg, parent=self.win)
-        # leave the window open to review; user can close it
+        messagebox.showinfo("Drill Summary", msg, parent=self.root)
 
     def _on_close(self):
-        self.win.destroy()
+        self.root.destroy()
+
+    def run(self):
+        if self._own_root:
+            self.root.mainloop()
 
 
-def open_opening_range_drill(root, questions: int = 20):
-    return OpeningRangeDrillWindow(root, questions=questions)
+if __name__ == "__main__":
+    app = OpeningRangeDrillApp(questions=20)
+    app.run()

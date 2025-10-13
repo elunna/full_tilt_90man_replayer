@@ -16,12 +16,6 @@ except Exception:
     ImageTk = None
     PIL_AVAILABLE = False
 
-# Optional Opening Range Drill window (Toplevel)
-try:
-    from gui_opening_range_drill import OpeningRangeDrillWindow  # opens a drill window
-except Exception:
-    OpeningRangeDrillWindow = None
-
 SEATS = 9
 CARD_WIDTH = 120
 CARD_HEIGHT = 160
@@ -69,25 +63,6 @@ class HandReplayerGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Full Tilt 90-Man Tournament Replayer")
-        # Add a simple Drills menu to launch Opening Range Drill in a separate window
-        try:
-            current_menu = self.root.nametowidget(self.root.cget("menu")) if self.root.cget("menu") else None
-        except Exception:
-            current_menu = None
-        if not current_menu:
-            current_menu = tk.Menu(self.root)
-            self.root.config(menu=current_menu)
-        drills_menu = tk.Menu(current_menu, tearoff=0)
-
-        def _open_opening_range_drill():
-            if OpeningRangeDrillWindow is None:
-                messagebox.showerror("Unavailable", "Opening Range Drill UI failed to load.")
-                return
-            # Launch in its own Toplevel
-            OpeningRangeDrillWindow(self.root)
-
-        drills_menu.add_command(label="Opening Range (Raise/Fold)", command=_open_opening_range_drill)
-        current_menu.add_cascade(label="Drills", menu=drills_menu)
 
         self.parser = None
         self.hands = []
