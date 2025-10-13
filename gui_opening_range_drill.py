@@ -97,9 +97,6 @@ class OpeningRangeDrillApp:
             "activebackground": self.fold_btn.cget("activebackground") if "activebackground" in self.fold_btn.keys() else None,
         }
 
-        # End Drill button (no Next button; auto-advance is used)
-        self.end_btn = tk.Button(controls, text="End Drill", width=12, command=self._on_end)
-        self.end_btn.grid(row=0, column=2, padx=6)
         # Recommended action label (centered under feedback)
         self.recommended_var = tk.StringVar(value="")
         self.recommended_label = tk.Label(outer, textvariable=self.recommended_var, font=("Segoe UI", 14))
@@ -228,10 +225,6 @@ class OpeningRangeDrillApp:
         correct, snap = self.drill.submit("fold")
         self._after_answer(correct, snap, self.fold_btn)
 
-    def _on_end(self):
-        self._cancel_pending_advance()
-        self._show_summary()
-
     def _show_summary(self):
         summary = self.drill.summary()
         msg = (
@@ -240,6 +233,8 @@ class OpeningRangeDrillApp:
             f"Grade: {summary['grade']}\n"
         )
         messagebox.showinfo("Drill Summary", msg, parent=self.root)
+        # Exit immediately after showing the summary
+        self._on_close()
 
     def _on_escape(self, event=None):
         self._on_close()
