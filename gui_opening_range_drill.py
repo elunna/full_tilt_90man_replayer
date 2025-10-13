@@ -22,12 +22,94 @@ def render_card_text(card: str) -> str:
     return f"{card[0]}{SUIT_SYM.get(card[1], card[1])}"
 
 
+class ModeSelectApp:
+    """
+    Simple launcher to select which drill mode to run.
+    For now, only Opening Range (Raise/Fold) is available; others are placeholders.
+    """
+
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Poker Drills - Select Mode")
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.bind("<Escape>", lambda e: self._on_close())
+
+        self._build_ui()
+        self._drill_app = None
+
+    def _build_ui(self):
+        outer = tk.Frame(self.root, padx=16, pady=16)
+        outer.pack(fill="both", expand=True)
+
+        tk.Label(
+            outer, text="Select a Drill Mode", font=("Segoe UI", 16, "bold")
+        ).pack(pady=(0, 12))
+
+        grid = tk.Frame(outer)
+        grid.pack()
+
+        # Opening Range (implemented)
+        tk.Button(
+            grid, text="Opening Range (Raise/Fold)", width=28, command=self._start_opening_range
+        ).grid(row=0, column=0, padx=8, pady=6)
+
+        # Future modes: disabled for now
+        tk.Button(
+            grid, text="Facing Raises (Coming soon)", width=28, state="disabled"
+        ).grid(row=1, column=0, padx=8, pady=6)
+
+        tk.Button(
+            grid, text="Defend Big Blind (Coming soon)", width=28, state="disabled"
+        ).grid(row=2, column=0, padx=8, pady=6)
+
+        tk.Button(
+            grid, text="Isolate Limpers (Coming soon)", width=28, state="disabled"
+        ).grid(row=3, column=0, padx=8, pady=6)
+
+        tk.Button(
+            grid, text="Blind vs Blind (Coming soon)", width=28, state="disabled"
+        ).grid(row=4, column=0, padx=8, pady=6)
+
+        # Size this launcher modestly
+        self.root.update_idletasks()
+        w = max(420, self.root.winfo_reqwidth() + 20)
+        h = max(240, self.root.winfo_reqheight() + 20)
+        self.root.geometry(f"{w}x{h}")
+        self.root.minsize(w, h)
+        self.root.resizable(False, False)
+
+    def _clear_root_children(self):
+        for w in self.root.winfo_children():
+            try:
+                w.destroy()
+            except Exception:
+                pass
+
+    def _start_opening_range(self):
+        # Unbind launcher Escape so the drill can own it.
+        try:
+            self.root.unbind("<Escape>")
+        except Exception:
+            pass
+        # Clear launcher UI and hand over to the drill app in the same root
+        self._clear_root_children()
+        self._drill_app = OpeningRangeDrillApp(master=self.root, questions=20)
+        # Do not call run(); drill app will not own mainloop since we passed a master.
+
+    def _on_close(self):
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def run(self):
+        self.root.mainloop()
+
+
 class OpeningRangeDrillApp:
     """
     Standalone window that runs a 20-question opening-range Raise/Fold drill.
     Positions are random. No timer. Summary/grade at the end.
-
-    Run with: python gui_opening_range_drill.py
     """
 
     CARD_W = 150
@@ -315,5 +397,6 @@ class OpeningRangeDrillApp:
 
 
 if __name__ == "__main__":
-    app = OpeningRangeDrillApp(questions=20)
-    app.run()
+    # Start with a mode selector so future modes can plug in easily.
+    launcher = ModeSelectApp()
+    launcher.run()

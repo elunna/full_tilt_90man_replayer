@@ -1,10 +1,92 @@
 {
-  "UTG": ["77", "88", "99", "TT", "JJ", "QQ", "KK", "AA", "AKs", "AQs", "AJs", "KQs", "AKo", "AQo"],
-  "UTG+1": ["66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA", "ATs", "AJs", "AQs", "KQs", "AKs", "KJs", "QJs", "AKo", "AQo"],
-  "MP": ["55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA", "ATs", "AJs", "AQs", "AKs", "KTs", "KJs", "QJs", "JTs", "T9s", "98s", "AKo", "AQo", "AJo", "KQo"],
-  "HJ": ["44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA", "A9s+", "K9s+", "QTs+", "JTs", "T9s", "98s", "AKo", "AQo", "AJo", "KQo"],
-  "CO": ["33+", "A2s+", "K8s+", "Q9s+", "J9s+", "T9s", "98s", "87s", "A9o+", "KTo+", "QTo+", "JTo"],
-  "BTN": ["22+", "A2s+", "K2s+", "Q6s+", "J7s+", "T7s+", "97s+", "86s+", "A2o+", "K9o+", "Q9o+", "J9o+", "T9o"],
-  "SB": ["22+", "A2s+", "K2s+", "Q5s+", "J7s+", "T7s+", "97s+", "86s+", "A2o+", "K9o+", "Q9o+", "J9o+", "T9o"],
-  "BB": ["22+", "A2s+", "K2s+", "Q5s+", "J7s+", "T7s+", "97s+", "86s+", "A2o+", "K9o+", "Q9o+", "J9o+", "T9o"]
+  "UTG": [
+    "77+",
+    "AJs", "AQs", "AKs",
+    "KQs",
+    "AQo", "AKo"
+  ],
+  "UTG+1": [
+    "66+",
+    "ATs", "AJs", "AQs", "AKs",
+    "KQs",
+    "AJo", "AQo", "AKo",
+    "KQo"
+  ],
+  "MP": [
+    "55+",
+    "ATs", "AJs", "AQs", "AKs",
+    "KJs", "KQs",
+    "QJs",
+    "JTs", "T9s",
+    "AJo", "AQo", "AKo",
+    "KQo"
+  ],
+  "HJ": [
+    "44+",
+    "A9s", "ATs", "AJs", "AQs", "AKs",
+    "KTs", "KJs", "KQs",
+    "QTs", "QJs",
+    "JTs", "T9s", "98s",
+    "ATo", "AJo", "AQo", "AKo",
+    "KQo"
+  ],
+  "CO": [
+    "33+",
+    "A2s", "A3s", "A4s", "A5s", "A6s", "A7s", "A8s", "A9s", "ATs", "AJs", "AQs", "AKs",
+    "K9s", "KTs", "KJs", "KQs",
+    "Q9s", "QTs", "QJs",
+    "J9s", "JTs",
+    "T9s", "98s", "87s",
+    "ATo", "AJo", "AQo", "AKo",
+    "KJo", "KQo",
+    "QJo"
+  ],
+  "BTN": [
+    "22+",
+    "A2s", "A3s", "A4s", "A5s", "A6s", "A7s", "A8s", "A9s", "ATs", "AJs", "AQs", "AKs",
+    "K2s", "K3s", "K4s", "K5s", "K6s", "K7s", "K8s", "K9s", "KTs", "KJs", "KQs",
+    "Q6s", "Q7s", "Q8s", "Q9s", "QTs", "QJs",
+    "J7s", "J8s", "J9s", "JTs",
+    "T7s", "T8s", "T9s",
+    "97s", "98s",
+    "86s", "87s",
+    "75s", "76s",
+    "65s",
+    "A2o", "A3o", "A4o", "A5o", "A6o", "A7o", "A8o", "A9o", "ATo", "AJo", "AQo", "AKo",
+    "K8o", "K9o", "KTo", "KJo", "KQo",
+    "Q9o", "QTo", "QJo",
+    "J9o", "JTo",
+    "T9o"
+  ],
+  "SB": [
+    "22+",
+    "A2s", "A3s", "A4s", "A5s", "A6s", "A7s", "A8s", "A9s", "ATs", "AJs", "AQs", "AKs",
+    "K2s", "K3s", "K4s", "K5s", "K6s", "K7s", "K8s", "K9s", "KTs", "KJs", "KQs",
+    "Q5s", "Q6s", "Q7s", "Q8s", "Q9s", "QTs", "QJs",
+    "J7s", "J8s", "J9s", "JTs",
+    "T7s", "T8s", "T9s",
+    "97s", "98s",
+    "86s", "87s",
+    "75s", "76s",
+    "65s",
+    "A2o", "A3o", "A4o", "A5o", "A6o", "A7o", "A8o", "A9o", "ATo", "AJo", "AQo", "AKo",
+    "K9o", "KTo", "KJo", "KQo",
+    "Q9o", "QJo",
+    "J9o",
+    "T9o"
+  ],
+  "BB": [
+    "22+",
+    "A2s", "A3s", "A4s", "A5s", "A6s", "A7s", "A8s", "A9s", "ATs", "AJs", "AQs", "AKs",
+    "K5s", "K6s", "K7s", "K8s", "K9s", "KTs", "KJs", "KQs",
+    "Q8s", "Q9s", "QTs", "QJs",
+    "J8s", "J9s", "JTs",
+    "T8s", "T9s",
+    "98s", "87s", "76s",
+    "A2o", "A3o", "A4o", "A5o", "A6o", "A7o", "A8o", "A9o", "ATo", "AJo", "AQo", "AKo",
+    "K9o", "KTo", "KJo", "KQo",
+    "Q9o", "QJo",
+    "J9o",
+    "T9o"
+  ]
 }
