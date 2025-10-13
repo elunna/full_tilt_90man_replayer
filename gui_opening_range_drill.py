@@ -39,7 +39,9 @@ class OpeningRangeDrillApp:
         self.drill = OpeningRangeDrill(questions=questions)
         self.current = None
         self.answered = False
-        self._last_feedback = None  # {"correct": bool, "recommended": "raise"|"fold"}
+        # Feedback from the PREVIOUS hand:
+        # {"correct": bool, "recommended": "raise"|"fold", "position": str, "hand": str}
+        self._last_feedback = None
 
         self._build_ui()
         self._start()
@@ -66,24 +68,21 @@ class OpeningRangeDrillApp:
         self.card_frame = tk.Frame(hand_frame)
         self.card_frame.pack()
 
-        # Feedback (large, centered) for the PREVIOUS hand and recommended action (underneath)
-        self.feedback_var = tk.StringVar(value="")
-        self.feedback_label = tk.Label(outer, textvariable=self.feedback_var, font=("Segoe UI", 32))
-        self.feedback_label.pack(pady=(4, 0))
-
-        self.recommended_var = tk.StringVar(value="")
-        self.recommended_label = tk.Label(outer, textvariable=self.recommended_var, font=("Segoe UI", 14))
-        self.recommended_label.pack(pady=(4, 0))
-
         # Controls (no Next, no End — ESC or window close to exit)
         controls = tk.Frame(outer, pady=12)
         controls.pack()
-
         self.raise_btn = tk.Button(controls, text="Raise", width=12, command=self._on_raise)
         self.raise_btn.grid(row=0, column=0, padx=6)
-
         self.fold_btn = tk.Button(controls, text="Fold", width=12, command=self._on_fold)
         self.fold_btn.grid(row=0, column=1, padx=6)
+
+        # Feedback (for the PREVIOUS hand) BELOW the option buttons
+        self.feedback_var = tk.StringVar(value="")
+        self.feedback_label = tk.Label(outer, textvariable=self.feedback_var, font=("Segoe UI", 24))
+        self.feedback_label.pack(pady=(6, 0))
+        self.recommended_var = tk.StringVar(value="")
+        self.recommended_label = tk.Label(outer, textvariable=self.recommended_var, font=("Segoe UI", 14))
+        self.recommended_label.pack(pady=(4, 0))
 
     def _fit_to_contents(self):
         """Ensure the window is sized to fit all widgets so nothing is clipped."""
@@ -121,14 +120,18 @@ class OpeningRangeDrillApp:
         l3.pack(side="left")
         self._card_labels = [l1, l2, l3]
 
-        # Show feedback from the PREVIOUS hand (if any)
+        # Show feedback from the PREVIOUS hand (if any) below the buttons
         if self._last_feedback is None:
             self.feedback_var.set("")
             self.recommended_var.set("")
         else:
-            self.feedback_var.set("correct" if self._last_feedback["correct"] else "X")
-            self.feedback_label.config(fg="#000000")
-            self.recommended_var.set(self._last_feedback["recommended"].upper())
+            # First line: "Last hand: {positive or negative feedback}"
+            self.feedback_var.set("Last hand: " + ("correct" if self._last_feedback["correct"] else "X"))
+            # Second line: "Recommend {action} from {position} with {hand}"
+            self.recommended_var.set(
+                f"Recommend {self._last_feedback['recommended'].upper()} "
+                f"from {self._last_feedback['position']} with {self._last_feedback['hand']}"
+            )
 
         # Enable actions each question
         self.raise_btn.config(state="normal")
@@ -141,6 +144,8 @@ class OpeningRangeDrillApp:
         self._last_feedback = {
             "correct": correct,
             "recommended": q_snapshot["answer"],
+            "position": q_snapshot["position"],
+            "hand": q_snapshot["key"],
         }
 
         # Immediately move to the next question (no pause)
