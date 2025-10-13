@@ -1,3 +1,4 @@
+import os
 import tkinter as tk
 from tkinter import messagebox
 from typing import Optional
@@ -29,6 +30,9 @@ class OpeningRangeDrillApp:
     Run with: python gui_opening_range_drill.py
     """
 
+    CARD_W = 150
+    CARD_H = 210
+
     def __init__(self, master: Optional[tk.Tk] = None, questions: int = 20):
         self._own_root = master is None
         self.root = master or tk.Tk()
@@ -36,10 +40,16 @@ class OpeningRangeDrillApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.bind("<Escape>", self._on_escape)  # ESC to immediately exit
 
-        # Fixed-size window state
+        # Fixed-size window state (lock size once after first render)
         self._size_locked = False
         self._fixed_w = None
         self._fixed_h = None
+
+        # Card image caches (reused from replayer design)
+        self.card_image_paths = {}
+        self.card_image_cache = {}
+        self.card_back_key = None
+
         self.drill = OpeningRangeDrill(questions=questions)
         self.current = None
         self.answered = False
@@ -49,9 +59,79 @@ class OpeningRangeDrillApp:
 
         self._build_ui()
         self._start()
-        self._fit_to_contents()  # lock size once after first render
+        self._fit_to_contents()  # Lock window size once after first render
 
+    # ====== Card image loading/rendering (borrowed pattern from gui_replayer.py) ======
+    def load_card_images(self):
+        """
+        Load all PNG images from ./png into a path map for lazy, sized loading.
+        Picks back_blue.png as the default card back if present, otherwise the first 'back*.png'.
+        """
+        base_dir = os.path.dirname(__file__)
+        png_dir = os.path.join(base_dir, "png")
+        self.card_image_paths.clear()
+        self.card_image_cache.clear()
+        self.card_back_key = None
+
+        if not os.path.isdir(png_dir):
+            return
+
+        for fname in os.listdir(png_dir):
+            if not fname.lower().endswith(".png"):
+                continue
+            key = os.path.splitext(fname)[0].lower()  # e.g., "ah", "back_blue"
+            self.card_image_paths[key] = os.path.join(png_dir, fname)
+
+        # Choose default back
+        if "back_blue" in self.card_image_paths:
+            self.card_back_key = "back_blue"
+        else:
+            for k in self.card_image_paths.keys():
+                if k.startswith("back"):
+                    self.card_back_key = k
+                    break
+
+    def get_card_image_sized(self, code: str, width: int, height: int):
+        """
+        Return a PhotoImage for the given card code at the requested size.
+        Unknown codes (like '??') or missing assets fall back to the default back image.
+        Images are resized to (width x height) via PIL if available, otherwise use tk.PhotoImage unscaled.
+        """
+        # Normalize desired key
+        key = None
+        if code and code != "??":
+            key = code.lower()
+        else:
+            key = self.card_back_key
+
+        if not key:
+            return None
+
+        cache_key = (key, int(width), int(height))
+        if cache_key in self.card_image_cache:
+            return self.card_image_cache[cache_key]
+
+        path = self.card_image_paths.get(key)
+        if not path:
+            return None
+
+        try:
+            if PIL_AVAILABLE:
+                img = Image.open(path).convert("RGBA")
+                img = img.resize((int(width), int(height)), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+            else:
+                photo = tk.PhotoImage(file=path)
+        except Exception:
+            return None
+
+        self.card_image_cache[cache_key] = photo
+        return photo
+
+    # ====== UI ======
     def _build_ui(self):
+        self.load_card_images()
+
         outer = tk.Frame(self.root, padx=12, pady=12)
         outer.pack(fill="both", expand=True)
 
@@ -76,9 +156,9 @@ class OpeningRangeDrillApp:
         controls = tk.Frame(outer, pady=12)
         controls.pack()
         self.raise_btn = tk.Button(controls, text="Raise", width=12, command=self._on_raise)
-        self.raise_btn.grid(row=0, column=0, padx=6)
+        self.raise_btn.grid(row=0, column=0, padx=10)
         self.fold_btn = tk.Button(controls, text="Fold", width=12, command=self._on_fold)
-        self.fold_btn.grid(row=0, column=1, padx=6)
+        self.fold_btn.grid(row=0, column=1, padx=10)
 
         # Feedback (for the PREVIOUS hand) BELOW the option buttons
         self.feedback_var = tk.StringVar(value="")
@@ -99,10 +179,9 @@ class OpeningRangeDrillApp:
         req_w = self.root.winfo_reqwidth()
         req_h = self.root.winfo_reqheight()
         # Scale by ~75% and apply once
-        w = max(400, int(req_w * 1.55))
-        h = max(300, int(req_h * 1.55))
+        w = max(640, int(req_w * 1.75))
+        h = max(480, int(req_h * 1.75))
         self._fixed_w, self._fixed_h = w, h
-        # Apply fixed geometry and prevent resizing/user adjustment
         try:
             self.root.geometry(f"{w}x{h}")
         except Exception:
@@ -128,23 +207,39 @@ class OpeningRangeDrillApp:
         self.pos_var.set(f"Position: {q['position']}")
 
         c1, c2 = q["hero_cards"]
-        txt1 = render_card_text(c1)
-        txt2 = render_card_text(c2)
-
-        def color_for(card):
-            return "#CC0000" if card[1] in RED_SUITS else "#000000"
 
         # Clear and render cards into the persistent frame
         for w in self.card_frame.winfo_children():
             w.destroy()
 
-        l1 = tk.Label(self.card_frame, text=txt1, font=("Segoe UI", 40), fg=color_for(c1))
-        l2 = tk.Label(self.card_frame, text="  ", font=("Segoe UI", 40))
-        l3 = tk.Label(self.card_frame, text=txt2, font=("Segoe UI", 40), fg=color_for(c2))
-        l1.pack(side="left")
-        l2.pack(side="left")
-        l3.pack(side="left")
-        self._card_labels = [l1, l2, l3]
+        # Try image-based rendering first
+        p1 = self.get_card_image_sized(c1, self.CARD_W, self.CARD_H)
+        p2 = self.get_card_image_sized(c2, self.CARD_W, self.CARD_H)
+
+        if p1 and p2:
+            l1 = tk.Label(self.card_frame, image=p1)
+            l2 = tk.Label(self.card_frame, text="  ", font=("Segoe UI", 40))
+            l3 = tk.Label(self.card_frame, image=p2)
+            l1.pack(side="left")
+            l2.pack(side="left")
+            l3.pack(side="left")
+            # Keep references so images don't get garbage-collected
+            self._card_imgs = [p1, p2]
+            self._card_labels = [l1, l2, l3]
+        else:
+            # Fallback to text rendering if images not available
+            def color_for(card):
+                return "#CC0000" if card[1] in RED_SUITS else "#000000"
+            txt1 = render_card_text(c1)
+            txt2 = render_card_text(c2)
+            l1 = tk.Label(self.card_frame, text=txt1, font=("Segoe UI", 40), fg=color_for(c1))
+            l2 = tk.Label(self.card_frame, text="  ", font=("Segoe UI", 40))
+            l3 = tk.Label(self.card_frame, text=txt2, font=("Segoe UI", 40), fg=color_for(c2))
+            l1.pack(side="left")
+            l2.pack(side="left")
+            l3.pack(side="left")
+            self._card_labels = [l1, l2, l3]
+            self._card_imgs = []
 
         # Show feedback from the PREVIOUS hand (if any) below the buttons
         if self._last_feedback is None:
