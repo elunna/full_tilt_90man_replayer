@@ -36,6 +36,10 @@ class OpeningRangeDrillApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.bind("<Escape>", self._on_escape)  # ESC to immediately exit
 
+        # Fixed-size window state
+        self._size_locked = False
+        self._fixed_w = None
+        self._fixed_h = None
         self.drill = OpeningRangeDrill(questions=questions)
         self.current = None
         self.answered = False
@@ -45,7 +49,7 @@ class OpeningRangeDrillApp:
 
         self._build_ui()
         self._start()
-        self._fit_to_contents()
+        self._fit_to_contents()  # lock size once after first render
 
     def _build_ui(self):
         outer = tk.Frame(self.root, padx=12, pady=12)
@@ -85,9 +89,31 @@ class OpeningRangeDrillApp:
         self.recommended_label.pack(pady=(4, 0))
 
     def _fit_to_contents(self):
-        """Ensure the window is sized to fit all widgets so nothing is clipped."""
+        """
+        Lock the window size ONCE to ~75% larger than required content.
+        Subsequent content changes will NOT alter the window size.
+        """
+        if self._size_locked:
+            return
         self.root.update_idletasks()
-        self.root.minsize(self.root.winfo_reqwidth(), self.root.winfo_reqheight())
+        req_w = self.root.winfo_reqwidth()
+        req_h = self.root.winfo_reqheight()
+        # Scale by ~75% and apply once
+        w = max(400, int(req_w * 1.55))
+        h = max(300, int(req_h * 1.55))
+        self._fixed_w, self._fixed_h = w, h
+        # Apply fixed geometry and prevent resizing/user adjustment
+        try:
+            self.root.geometry(f"{w}x{h}")
+        except Exception:
+            pass
+        try:
+            self.root.minsize(w, h)
+            self.root.maxsize(w, h)
+        except Exception:
+            pass
+        self.root.resizable(False, False)
+        self._size_locked = True
 
     def _start(self):
         q = self.drill.start()
@@ -137,7 +163,9 @@ class OpeningRangeDrillApp:
         self.raise_btn.config(state="normal")
         self.fold_btn.config(state="normal")
 
-        self._fit_to_contents()
+        # Do NOT change geometry after the initial lock
+        if not self._size_locked:
+            self._fit_to_contents()
 
     def _after_answer(self, correct: bool, q_snapshot):
         # Store feedback for display under the NEXT hand
