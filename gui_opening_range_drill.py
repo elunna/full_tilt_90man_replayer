@@ -33,7 +33,6 @@ class OpeningRangeDrillApp:
         self._own_root = master is None
         self.root = master or tk.Tk()
         self.root.title("Opening Range Drill (Raise/Fold)")
-        self.root.geometry("560x380")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.drill = OpeningRangeDrill(questions=questions)
@@ -42,6 +41,7 @@ class OpeningRangeDrillApp:
 
         self._build_ui()
         self._start()
+        self._fit_to_contents()
 
     def _build_ui(self):
         outer = tk.Frame(self.root, padx=12, pady=12)
@@ -61,6 +61,7 @@ class OpeningRangeDrillApp:
         hand_frame.pack(fill="both", expand=True)
 
         # persistent card frame to avoid layout shifting between questions
+        # and allow Tk to compute the required size correctly.
         self.card_frame = tk.Frame(hand_frame)
         self.card_frame.pack()
 
@@ -89,6 +90,14 @@ class OpeningRangeDrillApp:
         self.key_var = tk.StringVar(value="")
         self.key_label = tk.Label(outer, textvariable=self.key_var, font=("Segoe UI", 10), fg="#666666")
         self.key_label.pack(pady=(8, 0))
+
+    def _fit_to_contents(self):
+        """
+        Ensure the window is sized to fit all widgets so nothing is clipped,
+        and prevent shrinking below the content size.
+        """
+        self.root.update_idletasks()
+        self.root.minsize(self.root.winfo_reqwidth(), self.root.winfo_reqheight())
 
     def _start(self):
         q = self.drill.start()
@@ -128,6 +137,8 @@ class OpeningRangeDrillApp:
         self.raise_btn.config(state="normal")
         self.fold_btn.config(state="normal")
         self.next_btn.config(state="disabled")
+        # Recalculate min size in case fonts or platform metrics differ
+        self._fit_to_contents()
 
     def _after_answer(self, correct: bool, q_snapshot):
         self.answered = True
