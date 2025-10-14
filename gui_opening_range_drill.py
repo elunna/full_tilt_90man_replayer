@@ -231,21 +231,24 @@ class OpeningRangeDrillApp:
         hand_frame = tk.Frame(outer, pady=16)
         hand_frame.pack(fill="both", expand=True)
 
-        # Right-side running summary panel (pack this first so left content centers in remaining space)
+        # Right-side running summary panel
         self._build_summary_panel(hand_frame)
 
+        # Left column: holds the centered content and the buttons below it
+        left_col = tk.Frame(hand_frame)
+        left_col.pack(side="left", fill="both", expand=True)
+
         # Centered grid with two columns: Position (col 0) and Cards (col 1)
-        self.hand_inner = tk.Frame(hand_frame)
-        # pack without fill keeps it centered; expand keeps it in the middle vertically
-        self.hand_inner.pack(side="left", expand=True)
+        self.hand_inner = tk.Frame(left_col)
+        self.hand_inner.pack(pady=(0, 8))  # small gap above buttons area
 
         subtle_fg = "#666"
 
-        # Row 0: Titles (centered over their respective content columns)
+        # Row 0: Title (centered over the position column)
         self.pos_title = tk.Label(self.hand_inner, text="Position", font=("Segoe UI", 10), fg=subtle_fg)
         self.pos_title.grid(row=0, column=0, sticky="n", pady=(0, 4))
 
-        # Row 1: Content
+        # Row 1: Content (Position + Cards)
         self.pos_big_var = tk.StringVar(value="")
         self.pos_big_label = tk.Label(self.hand_inner, textvariable=self.pos_big_var, font=("Segoe UI", 36, "bold"))
         self.pos_big_label.grid(row=1, column=0, sticky="n")
@@ -257,15 +260,50 @@ class OpeningRangeDrillApp:
         self.hand_inner.grid_columnconfigure(0, weight=0)
         self.hand_inner.grid_columnconfigure(1, weight=0)
 
-        # Controls (no Next, no End — ESC or window close to exit)
-        controls = tk.Frame(outer, pady=12)
-        controls.pack()
-        self.raise_btn = tk.Button(controls, text="Raise", width=12, command=self._on_raise)
-        self.raise_btn.grid(row=0, column=0, padx=10)
-        self.fold_btn = tk.Button(controls, text="Fold", width=12, command=self._on_fold)
-        self.fold_btn.grid(row=0, column=1, padx=10)
+        # Controls (moved below the content, centered in available space)
+        self.buttons_row = tk.Frame(left_col)
+        self.buttons_row.pack(pady=(24, 0))
 
-        # Note: Removed per-hand textual feedback
+        buttons_inner = tk.Frame(self.buttons_row)
+        buttons_inner.pack()
+
+        # Big, bordered, UNIFORM-SIZE action buttons
+        # Wrap each button in a black frame to simulate a thick border cross-platform
+        uniform_width_chars = 12  # same width for both buttons
+
+        raise_border = tk.Frame(buttons_inner, bg="black")
+        raise_border.grid(row=0, column=0, padx=12)
+        self.raise_btn = tk.Button(
+            raise_border,
+            text="Raise",
+            font=("Segoe UI", 22, "bold"),
+            relief="raised",
+            bd=0,
+            padx=28,
+            pady=16,
+            width=uniform_width_chars,
+            cursor="hand2",
+            command=self._on_raise,
+        )
+        self.raise_btn.pack(padx=6, pady=6)
+
+        fold_border = tk.Frame(buttons_inner, bg="black")
+        fold_border.grid(row=0, column=1, padx=12)
+        self.fold_btn = tk.Button(
+            fold_border,
+            text="Fold",
+            font=("Segoe UI", 22, "bold"),
+            relief="raised",
+            bd=0,
+            padx=28,
+            pady=16,
+            width=uniform_width_chars,  # same width as Raise
+            cursor="hand2",
+            command=self._on_fold,
+        )
+        self.fold_btn.pack(padx=6, pady=6)
+
+        # Note: Removed the separate bottom controls row
 
     def _build_summary_panel(self, parent):
         """Create the running summary panel on the right side."""
