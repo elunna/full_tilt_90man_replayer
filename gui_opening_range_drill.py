@@ -122,7 +122,7 @@ class OpeningRangeDrillApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.bind("<Escape>", self._on_escape)  # ESC to immediately exit
 
-        # Fixed-size window state (lock size once after first render)
+        # Initial sizing state (set once, but allow user resizing afterward)
         self._size_locked = False
         self._fixed_w = None
         self._fixed_h = None
@@ -141,7 +141,7 @@ class OpeningRangeDrillApp:
         # Build UI and start
         self._build_ui()
         self._start()
-        self._fit_to_contents()  # Lock window size once after first render
+        self._fit_to_contents()  # Set an initial size; let user resize as needed
 
     # ====== Card image loading/rendering (borrowed pattern from gui_replayer.py) ======
     def load_card_images(self):
@@ -220,7 +220,7 @@ class OpeningRangeDrillApp:
         outer = tk.Frame(self.chrome, padx=12, pady=12)
         outer.pack(fill="both", expand=True)
 
-        # Header: progress on the left (no position text)
+        # Header: progress on the left
         header = tk.Frame(outer)
         header.pack(fill="x")
         self.progress_var = tk.StringVar(value="Q 0/20")
@@ -228,13 +228,16 @@ class OpeningRangeDrillApp:
         tk.Label(header, text="").pack(side="left", expand=True)
 
         # Hand area container
-        hand_frame = tk.Frame(outer, pady=24)
+        hand_frame = tk.Frame(outer, pady=16)
         hand_frame.pack(fill="both", expand=True)
+
+        # Right-side running summary panel (pack this first so left content centers in remaining space)
+        self._build_summary_panel(hand_frame)
 
         # Centered grid with two columns: Position (col 0) and Cards (col 1)
         self.hand_inner = tk.Frame(hand_frame)
         # pack without fill keeps it centered; expand keeps it in the middle vertically
-        self.hand_inner.pack(expand=True)
+        self.hand_inner.pack(side="left", expand=True)
 
         subtle_fg = "#666"
 
@@ -264,33 +267,137 @@ class OpeningRangeDrillApp:
 
         # Note: Removed per-hand textual feedback
 
+    def _build_summary_panel(self, parent):
+        """Create the running summary panel on the right side."""
+        # Let the summary panel expand so the user can reveal all columns by resizing
+        self.summary_panel = tk.Frame(parent)
+        self.summary_panel.pack(side="right", fill="both", expand=True)
+
+        title = tk.Label(self.summary_panel, text="Summary", font=("Segoe UI", 12, "bold"))
+        title.pack(pady=(0, 6))
+
+        # Scrollable list area (expand to consume available width/height)
+        self.summary_canvas = tk.Canvas(self.summary_panel, highlightthickness=0)
+        self.summary_scroll = tk.Scrollbar(self.summary_panel, orient="vertical", command=self.summary_canvas.yview)
+        self.summary_canvas.configure(yscrollcommand=self.summary_scroll.set)
+
+        self.summary_canvas.pack(side="left", fill="both", expand=True)
+        self.summary_scroll.pack(side="right", fill="y")
+
+        self.summary_inner = tk.Frame(self.summary_canvas)
+        # Keep a handle to the window so we can stretch it with the canvas width
+        self.summary_window_id = self.summary_canvas.create_window((0, 0), window=self.summary_inner, anchor="nw")
+
+        # Header row (subtle)
+        hdr_fg = "#666"
+        header_row = tk.Frame(self.summary_inner)
+        header_row.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        labels = ["#", "Position", "Hand", "Correct", "You"]
+        widths = [3, 9, 6, 8, 8]
+        for i, (txt, w) in enumerate(zip(labels, widths)):
+            tk.Label(header_row, text=txt, font=("Segoe UI", 9, "bold"), fg=hdr_fg, width=w, anchor="w").grid(
+                row=0, column=i, padx=(0 if i == 0 else 8, 0), sticky="w"
+            )
+
+        self._summary_next_row = 1  # next grid row index after header
+
+        # Keep scrollregion and inner width synced with canvas size
+        def on_inner_configure(_event=None):
+            self.summary_canvas.configure(scrollregion=self.summary_canvas.bbox("all"))
+            # Also ensure the inner frame matches the current canvas width (prevents horizontal clipping)
+            try:
+                self.summary_canvas.itemconfigure(self.summary_window_id, width=self.summary_canvas.winfo_width())
+            except Exception:
+                pass
+
+        def on_canvas_configure(event):
+            try:
+                self.summary_canvas.itemconfigure(self.summary_window_id, width=event.width)
+            except Exception:
+                pass
+
+        self.summary_inner.bind("<Configure>", on_inner_configure)
+        self.summary_canvas.bind("<Configure>", on_canvas_configure)
+
+    def _add_summary_entry(self, idx: int, position: str, hand: str, correct_action: str, your_action: str, correct: bool):
+        """Append a colored row to the summary list."""
+        row_bg = "#dff6dd" if correct else "#fde7e9"  # greenish / reddish subtle
+        row_fg = "#0f6d31" if correct else "#a4262c"
+
+        row = tk.Frame(self.summary_inner, bg=row_bg)
+        row.grid(row=self._summary_next_row, column=0, sticky="ew", pady=2)
+        self._summary_next_row += 1
+
+        # columns: #, position, hand, correct, you
+        values = [f"{idx:02d}", position, hand, correct_action.upper(), your_action.upper()]
+        widths = [3, 9, 6, 8, 8]
+
+        for i, (val, w) in enumerate(zip(values, widths)):
+            lbl = tk.Label(
+                row,
+                text=val,
+                font=("Segoe UI", 10),
+                width=w,
+                anchor="w",
+                bg=row_bg,
+                fg=row_fg if i in (0, 3, 4) else "#000",
+            )
+            lbl.grid(row=0, column=i, padx=(0 if i == 0 else 8, 0), sticky="w")
+
+    def _reset_summary_panel(self):
+        """Clear all summary rows (keep header)."""
+        for child in list(self.summary_inner.children.values()):
+            # Keep the first child (header_row) which we placed at grid row 0
+            try:
+                info = child.grid_info()
+                if info and int(info.get("row", 1)) > 0:
+                    child.destroy()
+            except Exception:
+                pass
+        self._summary_next_row = 1
+
     def _fit_to_contents(self):
         """
-        Lock the window size ONCE, with a narrower width multiplier to avoid excessive width.
-        Subsequent content changes will NOT alter the window size.
+        Set an initial window size based on content, but allow the user to resize freely.
+        Also set a minimum window size so the cards and summary don't get clipped to unusable sizes.
         """
         if self._size_locked:
             return
         self.root.update_idletasks()
+
+        # Good starting size that accommodates the summary panel
         req_w = self.root.winfo_reqwidth()
         req_h = self.root.winfo_reqheight()
-        # Balanced size
-        w = max(560, int(req_w * 1.35))
-        h = max(480, int(req_h * 1.50))
-        self._fixed_w, self._fixed_h = w, h
+        w = max(900, int(req_w * 1.30))
+        h = max(600, int(req_h * 1.40))
+
         try:
             self.root.geometry(f"{w}x{h}")
         except Exception:
             pass
+
+        # Compute a reasonable minimum size:
+        # - Ensure both cards fully visible + a small gap and position column
+        # - Ensure a practical minimum width for the summary panel
+        cards_min_w = self.CARD_W * 2 + 16
+        pos_min_w = 160
+        summary_min_w = 320
+        margin = 120  # padding, chrome, controls, internal gaps
+
+        min_w = cards_min_w + pos_min_w + summary_min_w + margin
+        min_h = self.CARD_H + 240  # header + labels + buttons + margins
+
         try:
-            self.root.minsize(w, h)
-            self.root.maxsize(w, h)
+            self.root.minsize(min_w, min_h)
         except Exception:
             pass
-        self.root.resizable(False, False)
+
+        # Allow free resizing now
+        self.root.resizable(True, True)
         self._size_locked = True
 
     def _start(self):
+        self._reset_summary_panel()
         q = self.drill.start()
         self._render_question(q)
 
@@ -351,9 +458,20 @@ class OpeningRangeDrillApp:
         except Exception:
             pass
 
-    def _after_answer(self, correct: bool, q_snapshot):
+    def _after_answer(self, correct: bool, q_snapshot, your_action: str):
         # Visual flash on border; no textual feedback and no pause
         self._flash_border("#127A0A" if correct else "#CC0000", ms=200)
+
+        # Append to running summary
+        idx = self.drill.result.total  # after submit, this is the answered count (1-based)
+        self._add_summary_entry(
+            idx=idx,
+            position=q_snapshot["position"],
+            hand=q_snapshot["key"],
+            correct_action=q_snapshot["answer"],
+            your_action=your_action,
+            correct=correct,
+        )
 
         # Immediately move to the next question
         q = self.drill.next_question()
@@ -366,15 +484,17 @@ class OpeningRangeDrillApp:
         if self.answered:
             return
         self.answered = True
-        correct, snap = self.drill.submit("raise")
-        self._after_answer(correct, snap)
+        your_action = "raise"
+        correct, snap = self.drill.submit(your_action)
+        self._after_answer(correct, snap, your_action)
 
     def _on_fold(self):
         if self.answered:
             return
         self.answered = True
-        correct, snap = self.drill.submit("fold")
-        self._after_answer(correct, snap)
+        your_action = "fold"
+        correct, snap = self.drill.submit(your_action)
+        self._after_answer(correct, snap, your_action)
 
     def _show_summary(self):
         summary = self.drill.summary()
