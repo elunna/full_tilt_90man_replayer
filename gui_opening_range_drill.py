@@ -84,7 +84,7 @@ class ModeSelectApp:
             pass
         # Clear launcher UI and hand over to the drill app in the same root
         self._clear_root_children()
-        self._drill_app = OpeningRangeDrillApp(master=self.root, drill_config=cfg, questions=50)
+        self._drill_app = OpeningRangeDrillApp(master=self.root, drill_config=cfg, questions=20)
 
     def _on_close(self):
         try:
@@ -304,16 +304,16 @@ class OpeningRangeDrillApp:
 
         # Header row (subtle)
         hdr_fg = "#666"
-        header_row = tk.Frame(self.summary_inner)
-        header_row.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        self._summary_header = tk.Frame(self.summary_inner)  # keep a ref so we can detect header
+        self._summary_header.grid(row=0, column=0, sticky="ew", pady=(0, 4))
         labels = ["#", "Position", "Hand", "Correct", "You"]
         widths = [3, 9, 6, 8, 8]
         for i, (txt, w) in enumerate(zip(labels, widths)):
-            tk.Label(header_row, text=txt, font=("Segoe UI", 9, "bold"), fg=hdr_fg, width=w, anchor="w").grid(
+            tk.Label(self._summary_header, text=txt, font=("Segoe UI", 9, "bold"), fg=hdr_fg, width=w, anchor="w").grid(
                 row=0, column=i, padx=(0 if i == 0 else 8, 0), sticky="w"
             )
 
-        self._summary_next_row = 1  # next grid row index after header
+        self._summary_next_row = 1  # tracks count; newest will be placed at row 1
 
         # Keep scrollregion and inner width synced with canvas size
         def on_inner_configure(_event=None):
@@ -333,13 +333,25 @@ class OpeningRangeDrillApp:
         self.summary_canvas.bind("<Configure>", on_canvas_configure)
 
     def _add_summary_entry(self, idx: int, position: str, hand: str, correct_action: str, your_action: str, correct: bool):
-        """Append a colored row to the summary list."""
+        """Append a colored row to the summary list, newest at the top (row 1)."""
         row_bg = "#dff6dd" if correct else "#fde7e9"  # greenish / reddish subtle
         row_fg = "#0f6d31" if correct else "#a4262c"
 
+        # Shift existing rows (except header) down by 1 so we can insert at the top
+        for child in self.summary_inner.winfo_children():
+            if child is self._summary_header:
+                continue
+            try:
+                info = child.grid_info()
+                if "row" in info:
+                    r = int(info["row"])
+                    child.grid_configure(row=r + 1)
+            except Exception:
+                pass
+
+        # Create the new top row at row=1
         row = tk.Frame(self.summary_inner, bg=row_bg)
-        row.grid(row=self._summary_next_row, column=0, sticky="ew", pady=2)
-        self._summary_next_row += 1
+        row.grid(row=1, column=0, sticky="ew", pady=2)
 
         values = [f"{idx:02d}", position, hand, correct_action.upper(), your_action.upper()]
         widths = [3, 9, 6, 8, 8]
@@ -355,6 +367,15 @@ class OpeningRangeDrillApp:
                 fg=row_fg if i in (0, 3, 4) else "#000",
             )
             lbl.grid(row=0, column=i, padx=(0 if i == 0 else 8, 0), sticky="w")
+
+        # Maintain a count if needed elsewhere
+        self._summary_next_row += 1
+
+        # Ensure we remain scrolled to the top where newest entries appear
+        try:
+            self.summary_canvas.yview_moveto(0.0)
+        except Exception:
+            pass
 
     def _fit_to_contents(self):
         """
@@ -469,7 +490,7 @@ class OpeningRangeDrillApp:
         # Visual flash on border
         self._flash_border("#127A0A" if correct else "#CC0000", ms=200)
 
-        # Append to running summary
+        # Append to running summary (newest at the top)
         idx = self.drill.result.total  # answered count (1-based after submit)
         self._add_summary_entry(
             idx=idx,
