@@ -2913,6 +2913,16 @@ class HandReplayerGUI:
             mark_id = self.hand_selector_canvas.create_text(
                 x + 4, y + 4, text="#", fill="#111", font=("Arial", 12, "bold"), anchor="nw"
             )
+            # Ensure the '#' marker doesn't block clicks on the underlying hand box.
+            # Bind the same click handler so clicking the marker selects the hand.
+            try:
+                self.hand_selector_canvas.tag_bind(
+                    mark_id,
+                    "<Button-1>",
+                    lambda e, sel_idx=idx: self.select_hand(sel_idx)
+                )
+            except Exception:
+                pass
             self.hand_note_markers[idx] = mark_id
         except Exception:
             pass
