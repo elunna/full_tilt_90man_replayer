@@ -3,7 +3,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Any
 
 RANKS = "23456789TJQKA"
 SUITS = "cdhs"
@@ -26,8 +26,7 @@ def _expand_plus_token(token: str) -> Set[str]:
     Expand shorthand like:
       - 'TT+' -> {'TT','JJ','QQ','KK','AA'}
       - 'A9s+' -> {'A9s','ATs','AJs','AQs','AKs'}
-      - 'K9o+' -> {'K9o','KTo','KJo','KQo','KAo' (invalid, up to 'A' so KAo not a thing)} -> should stop at 'A'
-    Note: For offsuit/suited non-pair, we increase the lower rank up to but including 'K' then 'A'.
+      - 'K9o+' -> {'K9o','KTo','KJo','KQo'}  (offsuit up to 'A' high)
     """
     out: Set[str] = set()
     if token.endswith('+'):
@@ -52,12 +51,7 @@ def _expand_plus_token(token: str) -> Set[str]:
 
 
 def expand_plus_notation(tokens: List[str]) -> Set[str]:
-    """
-    Expand a list that may include '+' shorthand and return a set of explicit combos.
-    Supported patterns:
-      - Pairs: '22+', 'TT+'
-      - Suited/offsuit: 'A9s+', 'K9o+'
-    """
+    """Expand a list that may include '+' shorthand and return a set of explicit combos."""
     expanded: Set[str] = set()
     for t in tokens:
         expanded |= _expand_plus_token(t)
@@ -72,80 +66,136 @@ class DrillResult:
     end_ts: float = 0.0
 
 
+@dataclass
+class DrillConfig:
+    """Represents one drill discovered from a JSON file."""
+    title: str
+    actions: Tuple[str, str]  # (in_range_action, out_of_range_action) e.g., ("raise","fold")
+    positions: Dict[str, List[str]]  # position -> list of tokens, e.g., ["77+","AJs",...]
+    source_path: str
+
+
+def discover_drills(ranges_dir: Optional[str] = None) -> List[DrillConfig]:
+    """
+    Scan the ranges directory for *.json, read 'drill_title' and 'actions',
+    and collect the remaining top-level keys as positions.
+
+    Backward compatible: if 'drill_title'/'actions' are missing, a title is
+    derived from the filename and actions default to ('raise','fold').
+    """
+    base = ranges_dir or os.path.join(os.path.dirname(__file__), "ranges")
+    drills: List[DrillConfig] = []
+    if not os.path.isdir(base):
+        return drills
+
+    for fname in os.listdir(base):
+        if not fname.lower().endswith(".json"):
+            continue
+        fpath = os.path.join(base, fname)
+        try:
+            with open(fpath, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+        except Exception:
+            continue
+
+        # Read metadata
+        title = data.get("drill_title") or os.path.splitext(fname)[0].replace("_", " ").title()
+        actions_list = data.get("actions") or ["raise", "fold"]
+        # Normalize to two actions
+        if not isinstance(actions_list, list) or len(actions_list) < 2:
+            actions_list = ["raise", "fold"]
+        actions = (str(actions_list[0]).lower(), str(actions_list[1]).lower())
+
+        # Collect positions from any non-meta top-level keys
+        positions: Dict[str, List[str]] = {}
+        for k, v in data.items():
+            if k in ("drill_title", "actions"):
+                continue
+            if isinstance(v, list):
+                positions[k] = v
+
+        # Skip empty drills
+        if not positions:
+            continue
+
+        drills.append(DrillConfig(title=title, actions=actions, positions=positions, source_path=fpath))
+    return drills
+
+
 class OpeningRangeDrill:
     """
-    Simple raise/fold opening-range drill across random positions.
+    Raise/fold style drill (or any two-action drill) driven by a DrillConfig.
+    Determines the 'in-range' action by checking whether hero's hand is in
+    the configured open range for the dealt position.
     """
-    POSITIONS = ["UTG", "UTG+1", "MP", "HJ", "CO", "BTN", "SB", "BB"]
 
-    def __init__(self, ranges_path: Optional[str] = None, questions: int = 20):
-        if ranges_path is None:
-            # default to ranges/opening_ranges.json next to this file
-            ranges_path = os.path.join(os.path.dirname(__file__), "ranges", "opening_ranges.json")
+    def __init__(self, config: DrillConfig, questions: int = 20):
+        self.config = config
         self.questions = questions
-        self.ranges_path = ranges_path
-        self.ranges: Dict[str, Set[str]] = self._load_ranges(ranges_path)
-        self._deck: List[str] = []
         self.result = DrillResult()
-        self.current: Optional[Dict[str, object]] = None  # {'position', 'hero_cards', 'key', 'answer'}
+        self._expanded_by_pos: Dict[str, Set[str]] = {
+            pos: expand_plus_notation(tokens) for pos, tokens in config.positions.items()
+        }
+        self._positions: List[str] = list(self._expanded_by_pos.keys())
+        self._current_q: Optional[Dict[str, Any]] = None
+        self._rng = random.Random()
 
-    def _load_ranges(self, path: str) -> Dict[str, Set[str]]:
-        with open(path, "r") as f:
-            data = json.load(f)
-        expanded: Dict[str, Set[str]] = {}
-        for pos, hands in data.items():
-            expanded[pos] = expand_plus_notation(hands)
-        return expanded
+    def _deal_two(self) -> Tuple[str, str]:
+        ranks = list(RANKS)
+        suits = list(SUITS)
+        # Simple 52-card sample without replacement
+        deck = [r + s for r in ranks for s in suits]
+        c1 = self._rng.choice(deck)
+        deck.remove(c1)
+        c2 = self._rng.choice(deck)
+        return c1.upper(), c2.upper()
 
-    def _fresh_deck(self) -> None:
-        self._deck = [r + s for r in RANKS for s in SUITS]
-        random.shuffle(self._deck)
+    def _make_question(self) -> Dict[str, Any]:
+        pos = self._rng.choice(self._positions)
+        c1, c2 = self._deal_two()
+        key = normalize_hand(c1, c2)
+        in_range = key in self._expanded_by_pos[pos]
+        in_action, out_action = self.config.actions
+        answer = in_action if in_range else out_action
+        return {
+            "position": pos,
+            "hero_cards": (c1, c2),
+            "key": key,
+            "answer": answer,
+        }
 
-    def _deal(self, n: int) -> List[str]:
-        if len(self._deck) < n:
-            self._fresh_deck()
-        return [self._deck.pop() for _ in range(n)]
-
-    def start(self) -> Dict[str, object]:
+    def start(self) -> Dict[str, Any]:
         self.result = DrillResult(total=0, correct=0, start_ts=time.time(), end_ts=0.0)
-        self._fresh_deck()
-        q = self.next_question()
-        assert q is not None
-        return q
+        self._current_q = self._make_question()
+        return self._current_q
 
-    def next_question(self) -> Optional[Dict[str, object]]:
-        if self.result.total >= self.questions:
-            return None
-        pos = random.choice(self.POSITIONS)
-        hero_cards = self._deal(2)
-        key = normalize_hand(hero_cards[0], hero_cards[1])
-        answer = "raise" if key in self.ranges.get(pos, set()) else "fold"
-        self.current = {"position": pos, "hero_cards": hero_cards, "key": key, "answer": answer}
-        return self.current
-
-    def submit(self, user_choice: str) -> Tuple[bool, Dict[str, object]]:
-        """
-        user_choice: 'raise' | 'fold'
-        Returns: (correct, current_question_snapshot)
-        """
-        if self.current is None:
+    def submit(self, user_action: str) -> Tuple[bool, Dict[str, Any]]:
+        """Return (correct, snapshot_of_current_question)."""
+        if not self._current_q:
             raise RuntimeError("No active question")
-        correct = (user_choice == self.current["answer"])
+        snap = dict(self._current_q)  # shallow copy
+        correct = (user_action.lower() == snap["answer"])
+        self.result.total += 1
         if correct:
             self.result.correct += 1
-        self.result.total += 1
-        # return a copy to avoid external mutation
-        return correct, dict(self.current)
+        return correct, snap
 
-    def summary(self) -> Dict[str, object]:
-        self.result.end_ts = time.time()
-        pct = int(round(100.0 * (self.result.correct / max(1, self.result.total))))
-        grade = "A" if pct >= 90 else "B" if pct >= 80 else "C" if pct >= 70 else "D" if pct >= 60 else "F"
-        duration_ms = int((self.result.end_ts - self.result.start_ts) * 1000)
-        return {
-            "total": self.result.total,
-            "correct": self.result.correct,
-            "percent": pct,
-            "grade": grade,
-            "duration_ms": duration_ms,
-        }
+    def next_question(self) -> Optional[Dict[str, Any]]:
+        if self.result.total >= self.questions:
+            self.result.end_ts = time.time()
+            self._current_q = None
+            return None
+        self._current_q = self._make_question()
+        return self._current_q
+
+    def summary(self) -> Dict[str, Any]:
+        total = max(1, self.result.total)
+        pct = int(round(100.0 * self.result.correct / total))
+        grade = (
+            "A" if pct >= 90 else
+            "B" if pct >= 80 else
+            "C" if pct >= 70 else
+            "D" if pct >= 60 else
+            "F"
+        )
+        return {"correct": self.result.correct, "total": self.result.total, "percent": pct, "grade": grade}
