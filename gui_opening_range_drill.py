@@ -129,16 +129,16 @@ class OpeningRangeDrillApp:
 
         # Card image caches (reused from replayer design)
         self.card_image_paths = {}
+        our_dir = os.path.dirname(__file__)
+        self.png_dir = os.path.join(our_dir, "png")
         self.card_image_cache = {}
         self.card_back_key = None
 
         self.drill = OpeningRangeDrill(questions=questions)
         self.current = None
         self.answered = False
-        # Feedback from the PREVIOUS hand:
-        # {"correct": bool, "recommended": "raise"|"fold", "position": str, "hand": str}
-        self._last_feedback = None
 
+        # Build UI and start
         self._build_ui()
         self._start()
         self._fit_to_contents()  # Lock window size once after first render
@@ -149,20 +149,18 @@ class OpeningRangeDrillApp:
         Load all PNG images from ./png into a path map for lazy, sized loading.
         Picks back_blue.png as the default card back if present, otherwise the first 'back*.png'.
         """
-        base_dir = os.path.dirname(__file__)
-        png_dir = os.path.join(base_dir, "png")
         self.card_image_paths.clear()
         self.card_image_cache.clear()
         self.card_back_key = None
 
-        if not os.path.isdir(png_dir):
+        if not os.path.isdir(self.png_dir):
             return
 
-        for fname in os.listdir(png_dir):
+        for fname in os.listdir(self.png_dir):
             if not fname.lower().endswith(".png"):
                 continue
             key = os.path.splitext(fname)[0].lower()  # e.g., "ah", "back_blue"
-            self.card_image_paths[key] = os.path.join(png_dir, fname)
+            self.card_image_paths[key] = os.path.join(self.png_dir, fname)
 
         # Choose default back
         if "back_blue" in self.card_image_paths:
@@ -214,10 +212,15 @@ class OpeningRangeDrillApp:
     def _build_ui(self):
         self.load_card_images()
 
-        outer = tk.Frame(self.root, padx=12, pady=12)
+        # Chrome frame we can flash as the "window border"
+        self.chrome = tk.Frame(self.root, bg=self.root.cget("bg"), padx=4, pady=4)
+        self.chrome.pack(fill="both", expand=True)
+        self._chrome_default_bg = self.chrome.cget("bg")
+
+        outer = tk.Frame(self.chrome, padx=12, pady=12)
         outer.pack(fill="both", expand=True)
 
-        # Header: progress on the left (removed "Position:" text)
+        # Header: progress on the left (no position text)
         header = tk.Frame(outer)
         header.pack(fill="x")
         self.progress_var = tk.StringVar(value="Q 0/20")
@@ -228,25 +231,43 @@ class OpeningRangeDrillApp:
         hand_frame = tk.Frame(outer, pady=24)
         hand_frame.pack(fill="both", expand=True)
 
-        # Inner container that will be centered; holds big position (left) and cards (right)
+        # Centered inner row that holds position (left) and cards (right)
         self.hand_inner = tk.Frame(hand_frame)
-        # expand=True centers the child when not filling
         self.hand_inner.pack(expand=True)
 
-        # Big position label (left), right-aligned within its own box (no fixed width so it doesn't skew centering)
+        # Subtle label style
+        subtle_fg = "#666"
+
+        # Position container (vertical): small label, then big position
+        self.pos_container = tk.Frame(self.hand_inner)
+        self.pos_container.pack(side="left")
+
+        self.pos_title = tk.Label(
+            self.pos_container, text="Position", font=("Segoe UI", 10), fg=subtle_fg, anchor="e", justify="right"
+        )
+        self.pos_title.pack(fill="x")
         self.pos_big_var = tk.StringVar(value="")
         self.pos_big_label = tk.Label(
-            self.hand_inner,
+            self.pos_container,
             textvariable=self.pos_big_var,
             font=("Segoe UI", 36, "bold"),
             anchor="e",
             justify="right",
         )
-        self.pos_big_label.pack(side="left")
+        self.pos_big_label.pack(fill="x")
 
         # Small padding between position and cards
-        self.card_frame = tk.Frame(self.hand_inner)
-        self.card_frame.pack(side="left", padx=55)
+        self.cards_container = tk.Frame(self.hand_inner)
+        self.cards_container.pack(side="left", padx=12)
+
+        self.cards_title = tk.Label(
+            self.cards_container, text="Cards", font=("Segoe UI", 10), fg=subtle_fg, anchor="w", justify="left"
+        )
+        self.cards_title.pack(fill="x")
+
+        # Cards go under the "Cards" title
+        self.card_frame = tk.Frame(self.cards_container)
+        self.card_frame.pack()
 
         # Controls (no Next, no End — ESC or window close to exit)
         controls = tk.Frame(outer, pady=12)
@@ -256,13 +277,7 @@ class OpeningRangeDrillApp:
         self.fold_btn = tk.Button(controls, text="Fold", width=12, command=self._on_fold)
         self.fold_btn.grid(row=0, column=1, padx=10)
 
-        # Feedback (for the PREVIOUS hand) BELOW the option buttons
-        self.feedback_var = tk.StringVar(value="")
-        self.feedback_label = tk.Label(outer, textvariable=self.feedback_var, font=("Segoe UI", 24))
-        self.feedback_label.pack(pady=(6, 0))
-        self.recommended_var = tk.StringVar(value="")
-        self.recommended_label = tk.Label(outer, textvariable=self.recommended_var, font=("Segoe UI", 14))
-        self.recommended_label.pack(pady=(4, 0))
+        # Note: Removed per-hand textual feedback
 
     def _fit_to_contents(self):
         """
@@ -274,7 +289,7 @@ class OpeningRangeDrillApp:
         self.root.update_idletasks()
         req_w = self.root.winfo_reqwidth()
         req_h = self.root.winfo_reqheight()
-        # Make width less aggressive; keep height comfy
+        # Balanced size
         w = max(560, int(req_w * 1.35))
         h = max(480, int(req_h * 1.50))
         self._fixed_w, self._fixed_h = w, h
@@ -301,16 +316,14 @@ class OpeningRangeDrillApp:
         done = self.drill.result.total  # answered so far
         self.progress_var.set(f"Q {done + 1}/{total}")
 
-        c1, c2 = q["hero_cards"]
-
         # Update the big position label text
         self.pos_big_var.set(q["position"])
 
-        # Clear and render cards into the persistent frame
+        # Render cards
+        c1, c2 = q["hero_cards"]
         for w in self.card_frame.winfo_children():
             w.destroy()
 
-        # Try image-based rendering first
         p1 = self.get_card_image_sized(c1, self.CARD_W, self.CARD_H)
         p2 = self.get_card_image_sized(c2, self.CARD_W, self.CARD_H)
 
@@ -321,8 +334,7 @@ class OpeningRangeDrillApp:
             l1.pack(side="left")
             l2.pack(side="left")
             l3.pack(side="left")
-            # Keep references so images don't get garbage-collected
-            self._card_imgs = [p1, p2]
+            self._card_imgs = [p1, p2]  # prevent GC
             self._card_labels = [l1, l2, l3]
         else:
             # Fallback to text rendering if images not available
@@ -339,37 +351,26 @@ class OpeningRangeDrillApp:
             self._card_labels = [l1, l2, l3]
             self._card_imgs = []
 
-        # Show feedback from the PREVIOUS hand (if any) below the buttons
-        if self._last_feedback is None:
-            self.feedback_var.set("")
-            self.recommended_var.set("")
-        else:
-            # First line: "Last hand: {positive or negative feedback}"
-            self.feedback_var.set("Last hand: " + ("correct" if self._last_feedback["correct"] else "X"))
-            # Second line: "Recommend {action} from {position} with {hand}"
-            self.recommended_var.set(
-                f"Recommend {self._last_feedback['recommended'].upper()} "
-                f"from {self._last_feedback['position']} with {self._last_feedback['hand']}"
-            )
-
         # Enable actions each question
         self.raise_btn.config(state="normal")
         self.fold_btn.config(state="normal")
 
-        # Do NOT change geometry after the initial lock
         if not self._size_locked:
             self._fit_to_contents()
 
-    def _after_answer(self, correct: bool, q_snapshot):
-        # Store feedback for display under the NEXT hand
-        self._last_feedback = {
-            "correct": correct,
-            "recommended": q_snapshot["answer"],
-            "position": q_snapshot["position"],
-            "hand": q_snapshot["key"],
-        }
+    def _flash_border(self, color: str, ms: int = 200):
+        """Flash the chrome frame as visual feedback without pausing progression."""
+        try:
+            self.chrome.config(bg=color)
+            self.root.after(ms, lambda: self.chrome.config(bg=self._chrome_default_bg))
+        except Exception:
+            pass
 
-        # Immediately move to the next question (no pause)
+    def _after_answer(self, correct: bool, q_snapshot):
+        # Visual flash on border; no textual feedback and no pause
+        self._flash_border("#127A0A" if correct else "#CC0000", ms=200)
+
+        # Immediately move to the next question
         q = self.drill.next_question()
         if q is None:
             self._show_summary()
