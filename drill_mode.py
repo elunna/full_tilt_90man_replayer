@@ -45,7 +45,7 @@ def _expand_plus_token(token: str) -> Set[str]:
     out: Set[str] = set()
     t = token.strip()
     if not t.endswith('+'):
-        return { _canon_token(t) }
+        return {_canon_token(t)}
 
     base = _canon_token(t[:-1])
 
@@ -63,11 +63,10 @@ def _expand_plus_token(token: str) -> Set[str]:
         hi_idx = RANKS.index(hi)
         lo_idx = RANKS.index(lo)
 
-        # Always include the base hand itself (e.g., include 'K8o' in 'K8o+')
+        # Include the base hand itself (e.g., include 'K8o' in 'K8o+')
         out.add(base)
 
         # Increase the low rank up to the rank just below the high rank.
-        # This avoids generating pairs (e.g., 'KKo') and avoids crossing to 'A' when hi != 'A'.
         max_lo_idx = hi_idx - 1  # e.g., for 'K', this is 'Q'; for 'A', this is 'K'
         for i in range(lo_idx + 1, max_lo_idx + 1):
             next_lo = RANKS[i]
@@ -75,7 +74,7 @@ def _expand_plus_token(token: str) -> Set[str]:
         return out
 
     # Fallback: return the canonicalized token as-is
-    return { base }
+    return {base}
 
 
 def expand_plus_notation(tokens: List[str]) -> Set[str]:
@@ -98,8 +97,11 @@ class DrillResult:
 class DrillConfig:
     """Represents one drill discovered from a JSON file."""
     title: str
-    actions: Tuple[str, str]  # (in_range_action, out_of_range_action) e.g., ("raise","fold")
-    positions: Dict[str, List[str]]  # position -> list of tokens, e.g., ["77+","AJs",...]
+    actions: Tuple[str, ...]  # now supports 2 or 3+ actions, e.g., ("raise","call","fold")
+    # positions can be:
+    # - list[str]: tokens for the first action; all others default to last action
+    # - dict[action_name -> list[str]]: tokens per action (unknown hands default to last action)
+    positions: Dict[str, Any]
     source_path: str
 
 
@@ -108,8 +110,10 @@ def discover_drills(ranges_dir: Optional[str] = None) -> List[DrillConfig]:
     Scan the ranges directory for *.json, read 'drill_title' and 'actions',
     and collect the remaining top-level keys as positions.
 
-    Backward compatible: if 'drill_title'/'actions' are missing, a title is
-    derived from the filename and actions default to ('raise','fold').
+    Backward compatible:
+    - If 'drill_title'/'actions' are missing, derive a title from filename and default to ('raise','fold').
+    - If positions are a list, they map to the first action; others default to the last action.
+    - If positions are a dict keyed by action name, they map accordingly.
     """
     base = ranges_dir or os.path.join(os.path.dirname(__file__), "ranges")
     drills: List[DrillConfig] = []
@@ -129,20 +133,19 @@ def discover_drills(ranges_dir: Optional[str] = None) -> List[DrillConfig]:
         # Read metadata
         title = data.get("drill_title") or os.path.splitext(fname)[0].replace("_", " ").title()
         actions_list = data.get("actions") or ["raise", "fold"]
-        # Normalize to two actions
+        # Normalize to at least two actions
         if not isinstance(actions_list, list) or len(actions_list) < 2:
             actions_list = ["raise", "fold"]
-        actions = (str(actions_list[0]).lower(), str(actions_list[1]).lower())
+        actions = tuple(str(a).lower() for a in actions_list)
 
         # Collect positions from any non-meta top-level keys
-        positions: Dict[str, List[str]] = {}
+        positions: Dict[str, Any] = {}
         for k, v in data.items():
             if k in ("drill_title", "actions"):
                 continue
-            if isinstance(v, list):
+            if isinstance(v, list) or isinstance(v, dict):
                 positions[k] = v
 
-        # Skip empty drills
         if not positions:
             continue
 
@@ -152,19 +155,31 @@ def discover_drills(ranges_dir: Optional[str] = None) -> List[DrillConfig]:
 
 class OpeningRangeDrill:
     """
-    Raise/fold style drill (or any two-action drill) driven by a DrillConfig.
-    Determines the 'in-range' action by checking whether hero's hand is in
-    the configured open range for the dealt position.
+    Raise/fold/call style drill driven by a DrillConfig.
+    Determines the correct action by checking whether hero's hand is in any configured
+    action range for the dealt position. Unknown hands default to the last action.
     """
 
     def __init__(self, config: DrillConfig, questions: int = 20):
         self.config = config
         self.questions = questions
         self.result = DrillResult()
-        self._expanded_by_pos: Dict[str, Set[str]] = {
-            pos: expand_plus_notation(tokens) for pos, tokens in config.positions.items()
-        }
-        self._positions: List[str] = list(self._expanded_by_pos.keys())
+        self._actions: List[str] = list(config.actions)
+        # Map: pos -> action -> set of keys
+        self._expanded_by_pos_action: Dict[str, Dict[str, Set[str]]] = {}
+        for pos, spec in config.positions.items():
+            per_action: Dict[str, Set[str]] = {a: set() for a in self._actions}
+            if isinstance(spec, list):
+                # All tokens apply to the first action; others remain empty; defaulting in get_answer
+                per_action[self._actions[0]] = expand_plus_notation(spec)
+            elif isinstance(spec, dict):
+                for a_name, tokens in spec.items():
+                    a_key = str(a_name).lower()
+                    if a_key in per_action and isinstance(tokens, list):
+                        per_action[a_key] |= expand_plus_notation(tokens)
+            self._expanded_by_pos_action[pos] = per_action
+
+        self._positions: List[str] = list(self._expanded_by_pos_action.keys())
         self._current_q: Optional[Dict[str, Any]] = None
         self._rng = random.Random()
 
@@ -178,13 +193,23 @@ class OpeningRangeDrill:
         c2 = self._rng.choice(deck)
         return c1.upper(), c2.upper()
 
+    def _get_answer_for(self, pos: str, key: str) -> str:
+        """Return the configured action for this (position, hand key)."""
+        per_action = self._expanded_by_pos_action.get(pos, {})
+        # Check actions in listed order except the last which is the default fallback
+        if len(self._actions) >= 2:
+            for a in self._actions[:-1]:
+                if key in per_action.get(a, set()):
+                    return a
+            return self._actions[-1]
+        # Shouldn't happen; ensure at least one action
+        return self._actions[0] if self._actions else "fold"
+
     def _make_question(self) -> Dict[str, Any]:
         pos = self._rng.choice(self._positions)
         c1, c2 = self._deal_two()
         key = normalize_hand(c1, c2)
-        in_range = key in self._expanded_by_pos[pos]
-        in_action, out_action = self.config.actions
-        answer = in_action if in_range else out_action
+        answer = self._get_answer_for(pos, key)
         return {
             "position": pos,
             "hero_cards": (c1, c2),

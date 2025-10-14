@@ -1,0 +1,8 @@
+{
+  "drill_title": "BB Defend vs SB Raise",
+  "actions": ["raise", "call", "fold"],
+  "BB vs SB": {
+    "raise": ["K8o+", "A2s+", "TT+"],
+    "call": ["K7s+", "Q9o+", "A2o-A5o"]
+  }
+}

@@ -50,7 +50,8 @@ class ModeSelectApp:
             grid.pack()
             for i, d in enumerate(self._drills):
                 title = d.title
-                actions = f"{d.actions[0].title()} / {d.actions[1].title()}"
+                # Show all actions, not just first two
+                actions = " / ".join(a.title() for a in d.actions)
                 btn = tk.Button(
                     grid,
                     text=f"{title}\n({actions})",
@@ -98,7 +99,7 @@ class ModeSelectApp:
 
 class OpeningRangeDrillApp:
     """
-    Drill window that uses a discovered DrillConfig. Large buttons reflect config.actions.
+    Drill window that uses a discovered DrillConfig. Buttons reflect config.actions (2 or 3+).
     Includes running summary on the right.
     """
 
@@ -124,7 +125,8 @@ class OpeningRangeDrillApp:
         self.card_back_key = None
 
         self.config = drill_config
-        self.actions = (self.config.actions[0], self.config.actions[1])  # tuple of str
+        # Use all actions as provided (2 or 3+)
+        self.actions = list(self.config.actions)  # list of str
         self.drill = OpeningRangeDrill(config=drill_config, questions=questions)
         self.current = None
         self.answered = False
@@ -245,43 +247,29 @@ class OpeningRangeDrillApp:
         self.buttons_row = tk.Frame(left_col)
         self.buttons_row.pack(pady=(24, 0))
 
+        # Dynamic action buttons
+        self.action_buttons: List[tk.Button] = []
         buttons_inner = tk.Frame(self.buttons_row)
         buttons_inner.pack()
 
-        # Big, bordered, uniform-size action buttons labeled from drill config
-        uniform_width_chars = 12  # same width for both buttons
-
-        raise_border = tk.Frame(buttons_inner, bg="black")
-        raise_border.grid(row=0, column=0, padx=12)
-        self.raise_btn = tk.Button(
-            raise_border,
-            text=self.actions[0].title(),
-            font=("Segoe UI", 22, "bold"),
-            relief="raised",
-            bd=0,
-            padx=28,
-            pady=16,
-            width=uniform_width_chars,
-            cursor="hand2",
-            command=lambda: self._on_action(self.actions[0]),
-        )
-        self.raise_btn.pack(padx=6, pady=6)
-
-        fold_border = tk.Frame(buttons_inner, bg="black")
-        fold_border.grid(row=0, column=1, padx=12)
-        self.fold_btn = tk.Button(
-            fold_border,
-            text=self.actions[1].title(),
-            font=("Segoe UI", 22, "bold"),
-            relief="raised",
-            bd=0,
-            padx=28,
-            pady=16,
-            width=uniform_width_chars,
-            cursor="hand2",
-            command=lambda: self._on_action(self.actions[1]),
-        )
-        self.fold_btn.pack(padx=6, pady=6)
+        uniform_width_chars = 12  # same width for all buttons
+        for idx, action in enumerate(self.actions):
+            border = tk.Frame(buttons_inner, bg="black")
+            border.grid(row=0, column=idx, padx=12)
+            btn = tk.Button(
+                border,
+                text=action.title(),
+                font=("Segoe UI", 22, "bold"),
+                relief="raised",
+                bd=0,
+                padx=28,
+                pady=16,
+                width=uniform_width_chars,
+                cursor="hand2",
+                command=lambda a=action: self._on_action(a),
+            )
+            btn.pack(padx=6, pady=6)
+            self.action_buttons.append(btn)
 
     def _build_summary_panel(self, parent):
         """Create the running summary panel on the right side."""
@@ -472,8 +460,8 @@ class OpeningRangeDrillApp:
             self._card_imgs = []
 
         # Enable actions each question
-        self.raise_btn.config(state="normal")
-        self.fold_btn.config(state="normal")
+        for b in self.action_buttons:
+            b.config(state="normal")
 
         if not self._size_locked:
             self._fit_to_contents()
@@ -512,6 +500,9 @@ class OpeningRangeDrillApp:
         if self.answered:
             return
         self.answered = True
+        # Disable buttons after answering
+        for b in self.action_buttons:
+            b.config(state="disabled")
         correct, snap = self.drill.submit(action)
         self._after_answer(correct, snap, action)
 
