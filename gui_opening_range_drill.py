@@ -231,43 +231,28 @@ class OpeningRangeDrillApp:
         hand_frame = tk.Frame(outer, pady=24)
         hand_frame.pack(fill="both", expand=True)
 
-        # Centered inner row that holds position (left) and cards (right)
+        # Centered grid with two columns: Position (col 0) and Cards (col 1)
         self.hand_inner = tk.Frame(hand_frame)
+        # pack without fill keeps it centered; expand keeps it in the middle vertically
         self.hand_inner.pack(expand=True)
 
-        # Subtle label style
         subtle_fg = "#666"
 
-        # Position container (vertical): small label, then big position
-        self.pos_container = tk.Frame(self.hand_inner)
-        self.pos_container.pack(side="left")
+        # Row 0: Titles (centered over their respective content columns)
+        self.pos_title = tk.Label(self.hand_inner, text="Position", font=("Segoe UI", 10), fg=subtle_fg)
+        self.pos_title.grid(row=0, column=0, sticky="n", pady=(0, 4))
 
-        self.pos_title = tk.Label(
-            self.pos_container, text="Position", font=("Segoe UI", 10), fg=subtle_fg, anchor="e", justify="right"
-        )
-        self.pos_title.pack(fill="x")
+        # Row 1: Content
         self.pos_big_var = tk.StringVar(value="")
-        self.pos_big_label = tk.Label(
-            self.pos_container,
-            textvariable=self.pos_big_var,
-            font=("Segoe UI", 36, "bold"),
-            anchor="e",
-            justify="right",
-        )
-        self.pos_big_label.pack(fill="x")
+        self.pos_big_label = tk.Label(self.hand_inner, textvariable=self.pos_big_var, font=("Segoe UI", 36, "bold"))
+        self.pos_big_label.grid(row=1, column=0, sticky="n")
 
-        # Small padding between position and cards
-        self.cards_container = tk.Frame(self.hand_inner)
-        self.cards_container.pack(side="left", padx=12)
+        self.card_frame = tk.Frame(self.hand_inner)
+        self.card_frame.grid(row=1, column=1, sticky="n", padx=(16, 0))
 
-        self.cards_title = tk.Label(
-            self.cards_container, text="Cards", font=("Segoe UI", 10), fg=subtle_fg, anchor="w", justify="left"
-        )
-        self.cards_title.pack(fill="x")
-
-        # Cards go under the "Cards" title
-        self.card_frame = tk.Frame(self.cards_container)
-        self.card_frame.pack()
+        # Do not let columns stretch; size to content so the whole block stays centered
+        self.hand_inner.grid_columnconfigure(0, weight=0)
+        self.hand_inner.grid_columnconfigure(1, weight=0)
 
         # Controls (no Next, no End — ESC or window close to exit)
         controls = tk.Frame(outer, pady=12)
