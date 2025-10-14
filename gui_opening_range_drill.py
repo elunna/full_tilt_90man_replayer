@@ -244,13 +244,23 @@ class OpeningRangeDrillApp:
 
         subtle_fg = "#666"
 
-        # Row 0: Title (centered over the position column)
-        self.pos_title = tk.Label(self.hand_inner, text="Position", font=("Segoe UI", 10), fg=subtle_fg)
+        # Row 0: Title (centered over the position column) — set to 8 chars width to match content
+        self.pos_title = tk.Label(
+            self.hand_inner, text="Position", font=("Segoe UI", 10), fg=subtle_fg, width=8, anchor="center"
+        )
         self.pos_title.grid(row=0, column=0, sticky="n", pady=(0, 4))
 
         # Row 1: Content (Position + Cards)
         self.pos_big_var = tk.StringVar(value="")
-        self.pos_big_label = tk.Label(self.hand_inner, textvariable=self.pos_big_var, font=("Segoe UI", 36, "bold"))
+        # Lock the position area to 8 characters so cards don't shift as text changes
+        self.pos_big_label = tk.Label(
+            self.hand_inner,
+            textvariable=self.pos_big_var,
+            font=("Segoe UI", 36, "bold"),
+            width=8,
+            anchor="center",
+            justify="center",
+        )
         self.pos_big_label.grid(row=1, column=0, sticky="n")
 
         self.card_frame = tk.Frame(self.hand_inner)
@@ -268,7 +278,6 @@ class OpeningRangeDrillApp:
         buttons_inner.pack()
 
         # Big, bordered, UNIFORM-SIZE action buttons
-        # Wrap each button in a black frame to simulate a thick border cross-platform
         uniform_width_chars = 12  # same width for both buttons
 
         raise_border = tk.Frame(buttons_inner, bg="black")
@@ -297,13 +306,11 @@ class OpeningRangeDrillApp:
             bd=0,
             padx=28,
             pady=16,
-            width=uniform_width_chars,  # same width as Raise
+            width=uniform_width_chars,
             cursor="hand2",
             command=self._on_fold,
         )
         self.fold_btn.pack(padx=6, pady=6)
-
-        # Note: Removed the separate bottom controls row
 
     def _build_summary_panel(self, parent):
         """Create the running summary panel on the right side."""
@@ -446,7 +453,7 @@ class OpeningRangeDrillApp:
         done = self.drill.result.total  # answered so far
         self.progress_var.set(f"Q {done + 1}/{total}")
 
-        # Update the big position label text
+        # Update the big position label text (label width is fixed so layout won't shift)
         self.pos_big_var.set(q["position"])
 
         # Render cards
