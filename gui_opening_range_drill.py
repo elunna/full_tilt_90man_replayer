@@ -84,7 +84,7 @@ class ModeSelectApp:
             pass
         # Clear launcher UI and hand over to the drill app in the same root
         self._clear_root_children()
-        self._drill_app = OpeningRangeDrillApp(master=self.root, drill_config=cfg, questions=20)
+        self._drill_app = OpeningRangeDrillApp(master=self.root, drill_config=cfg, questions=50)
 
     def _on_close(self):
         try:
