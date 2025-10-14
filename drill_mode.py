@@ -21,33 +21,61 @@ def normalize_hand(card1: str, card2: str) -> str:
     return f"{hi}{lo}{'s' if suited else 'o'}"
 
 
+def _canon_token(tok: str) -> str:
+    """
+    Canonicalize a range token to match normalize_hand() output style:
+    - Pairs are like 'TT'
+    - Non-pairs are like 'K8o' or 'AJs' (upper-case ranks, lower-case suitedness)
+    """
+    t = tok.strip()
+    if len(t) == 2:
+        return t.upper()
+    if len(t) == 3:
+        return t[0].upper() + t[1].upper() + t[2].lower()
+    return t
+
+
 def _expand_plus_token(token: str) -> Set[str]:
     """
     Expand shorthand like:
-      - 'TT+' -> {'TT','JJ','QQ','KK','AA'}
+      - 'TT+'  -> {'TT','JJ','QQ','KK','AA'}
       - 'A9s+' -> {'A9s','ATs','AJs','AQs','AKs'}
-      - 'K9o+' -> {'K9o','KTo','KJo','KQo'}  (offsuit up to 'A' high)
+      - 'K9o+' -> {'K9o','KTo','KJo','KQo'}  (offsuit up to just below 'K' high)
     """
     out: Set[str] = set()
-    if token.endswith('+'):
-        base = token[:-1]
-        # Pairs like 'TT+'
-        if len(base) == 2 and base[0] == base[1]:
-            start = RANKS.index(base[0])
-            for i in range(start, len(RANKS)):
-                r = RANKS[i]
-                out.add(f"{r}{r}")
-            return out
-        # Hands like 'A9s+' or 'K9o+'
-        if len(base) == 3 and base[0] != base[1]:
-            hi, lo, suited = base[0], base[1], base[2]
-            lo_start = RANKS.index(lo)
-            # increase low rank until A
-            for i in range(lo_start, len(RANKS) - 1):
-                next_lo = RANKS[i + 1]
-                out.add(f"{hi}{next_lo}{suited}")
-            return out
-    return {token}
+    t = token.strip()
+    if not t.endswith('+'):
+        return { _canon_token(t) }
+
+    base = _canon_token(t[:-1])
+
+    # Pairs like 'TT+'
+    if len(base) == 2 and base[0] == base[1]:
+        start = RANKS.index(base[0])
+        for i in range(start, len(RANKS)):
+            r = RANKS[i]
+            out.add(f"{r}{r}")
+        return out
+
+    # Suited/off-suit hands like 'A9s+' or 'K9o+'
+    if len(base) == 3 and base[0] != base[1] and base[2] in ('s', 'o'):
+        hi, lo, suited = base[0], base[1], base[2]
+        hi_idx = RANKS.index(hi)
+        lo_idx = RANKS.index(lo)
+
+        # Always include the base hand itself (e.g., include 'K8o' in 'K8o+')
+        out.add(base)
+
+        # Increase the low rank up to the rank just below the high rank.
+        # This avoids generating pairs (e.g., 'KKo') and avoids crossing to 'A' when hi != 'A'.
+        max_lo_idx = hi_idx - 1  # e.g., for 'K', this is 'Q'; for 'A', this is 'K'
+        for i in range(lo_idx + 1, max_lo_idx + 1):
+            next_lo = RANKS[i]
+            out.add(f"{hi}{next_lo}{suited}")
+        return out
+
+    # Fallback: return the canonicalized token as-is
+    return { base }
 
 
 def expand_plus_notation(tokens: List[str]) -> Set[str]:
