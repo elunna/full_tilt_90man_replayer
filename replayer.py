@@ -140,82 +140,20 @@ class HandReplayerGUI:
         except Exception:
             pass
         # Hands
-        self.root.bind("<Left>", self._on_left)   # previous hand
-        self.root.bind("<Right>", self._on_right) # next hand
+        self.root.bind("<Left>", lambda e: self.navigate_hands(-1))  # previous hand
+        self.root.bind("<Right>", lambda e: self.navigate_hands(1))  # next hand
         # Actions
-        self.root.bind("<Up>", self._on_up)       # previous action
-        self.root.bind("<Down>", self._on_down)   # next action
+        self.root.bind("<Up>", lambda e: self.prev_action())         # previous action
+        self.root.bind("<Down>", lambda e: self.next_action())       # next action
         # New shortcuts (unchanged):
         # - Ctrl+Left: jump to beginning of current hand
-        self.root.bind("<Control-Up>", self._on_ctrl_up)
+        self.root.bind("<Control-Up>", lambda e: self.jump_to_hand_start())
         # - Ctrl+Right: jump to end of current hand
-        self.root.bind("<Control-Down>", self._on_ctrl_down)
+        self.root.bind("<Control-Down>", lambda e: self.jump_to_hand_end())
         # - Ctrl+Up: jump to last hand; Ctrl+Down: jump to first hand
-        self.root.bind("<Control-Right>", self._on_ctrl_right)
-        self.root.bind("<Control-Left>", self._on_ctrl_left)
+        self.root.bind("<Control-Right>", lambda e: (self.select_hand(len(self.hands) - 1) if self.hands else None))
+        self.root.bind("<Control-Left>", lambda e: (self.select_hand(0) if self.hands else None))
         
-    def _nav_shortcuts_blocked(self):
-        """Return True if navigation shortcuts should be disabled (e.g., a Text widget is focused)."""
-        try:
-            w = self.root.focus_get()
-        except Exception:
-            return False
-        try:
-            return isinstance(w, tk.Text)
-        except Exception:
-            return False
-
-    # Key handlers that respect focus state
-    def _on_left(self, e):
-        if self._nav_shortcuts_blocked():
-            return "break"
-        self.navigate_hands(-1)
-        return "break"
-
-    def _on_right(self, e):
-        if self._nav_shortcuts_blocked():
-            return "break"
-        self.navigate_hands(1)
-        return "break"
-
-    def _on_up(self, e):
-        if self._nav_shortcuts_blocked():
-            return "break"
-        self.prev_action()
-        return "break"
-
-    def _on_down(self, e):
-        if self._nav_shortcuts_blocked():
-            return "break"
-        self.next_action()
-        return "break"
-
-    def _on_ctrl_up(self, e):
-        if self._nav_shortcuts_blocked():
-            return "break"
-        self.jump_to_hand_start()
-        return "break"
-
-    def _on_ctrl_down(self, e):
-        if self._nav_shortcuts_blocked():
-            return "break"
-        self.jump_to_hand_end()
-        return "break"
-
-    def _on_ctrl_right(self, e):
-        if self._nav_shortcuts_blocked():
-            return "break"
-        if self.hands:
-            self.select_hand(len(self.hands) - 1)
-        return "break"
-
-    def _on_ctrl_left(self, e):
-        if self._nav_shortcuts_blocked():
-            return "break"
-        if self.hands:
-            self.select_hand(0)
-        return "break"
-
     def prev_action(self):
         """Navigate to the previous action."""
         if self.current_action_index > 0:
