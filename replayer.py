@@ -376,17 +376,27 @@ class HandReplayerGUI:
         except Exception:
             pass
 
-        # Ensure clicking anywhere else in the window clears focus from the notes
-        # panel so navigation shortcuts resume. Some widgets (e.g., Canvas) don't
-        # take focus by default, so explicitly move focus to root on outside clicks.
+        # Ensure clicking anywhere else in the main window clears focus from the notes
+        # panel so navigation shortcuts resume. Be careful not to steal focus from
+        # other Toplevels/dialogs (e.g. the file-open dialog).
         def _clear_notes_focus_on_click(event):
             try:
                 w = event.widget
                 # If the click was inside the notes widgets, keep focus there.
                 if w is self.notes_text or w is self.mistakes_text:
                     return
+                # Avoid acting on clicks that originate in other toplevels/dialogs.
                 try:
-                    self.root.focus_set()
+                    if w.winfo_toplevel() is not self.root:
+                        return
+                except Exception:
+                    # If we can't determine toplevel, be conservative and do nothing.
+                    return
+                # Only clear focus if one of the notes widgets currently has it.
+                try:
+                    focused = self.root.focus_get()
+                    if focused is self.notes_text or focused is self.mistakes_text:
+                        self.root.focus_set()
                 except Exception:
                     pass
             except Exception:
@@ -398,7 +408,7 @@ class HandReplayerGUI:
         except Exception:
             pass
 
-    # Bottom bar: hand selector and controls
+        # Bottom bar: hand selector and controls
         bottom_frame = tk.Frame(self.root)
         bottom_frame.pack(side='bottom', fill='x', pady=(4,4))
 
