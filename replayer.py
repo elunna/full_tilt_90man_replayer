@@ -623,6 +623,19 @@ class HandReplayerGUI:
                 self.heroes.append(hero)
             self.file_label.config(text=f"Loaded: {os.path.basename(file_path)}")
             self.populate_hand_selector()
+            # Reset UI and load the first hand of the newly opened history.
+            # This ensures the table view and action viewer reflect hand #1 immediately.
+            if self.hands:
+                # Start at the first hand (index 0)
+                self.current_hand_index = 0
+                # select_hand handles initializing table/action state and loading notes.
+                self.select_hand(0)
+            else:
+                # If no hands were found, clear the table and action viewer to avoid stale state.
+                try:
+                    self.table_canvas.delete("all")
+                except Exception:
+                    pass
         except Exception as e:
             tb = traceback.format_exc()
             self._show_error_dialog(
