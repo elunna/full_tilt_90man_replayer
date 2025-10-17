@@ -1,6 +1,5 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import tkinter.font as tkfont
 import math
 import re
 from ft_hand_parser import FullTiltHandParser
@@ -1868,28 +1867,11 @@ class HandReplayerGUI:
             # Position further toward the center than hole cards
             bx, by = self.get_centerward_position_fraction(sx, sy, cx, cy, fraction=0.30)
 
-            # Measure amount text and choose a radius large enough to contain it.
-            amt_text = f"{amount:,}"
-            try:
-                font = tkfont.Font(family="Arial", size=9, weight="bold")
-                text_w = font.measure(amt_text)
-                text_h = font.metrics("linespace")
-            except Exception:
-                # Fallback: conservative estimate per character
-                text_w = len(amt_text) * 6
-                text_h = 12
-
-            padding = 10  # inner padding between text and circle edge
-            # Radius must accommodate the larger dimension (width or height)
-            r = max(14, int(max(text_w / 2.0, text_h / 2.0) + padding))
-
             # Draw chip circle and amount
+            r = 25
             self.table_canvas.create_oval(bx - r, by - r, bx + r, by + r, fill="#70f040", outline="#222", width=2)
-            # Draw the amount using the measured font if possible
-            try:
-                self.table_canvas.create_text(bx, by, text=amt_text, fill="#000", font=font)
-            except Exception:
-                self.table_canvas.create_text(bx, by, text=amt_text, fill="#000", font=("Arial", 9, "bold"))
+            # Keep the text small to fit typical amounts
+            self.table_canvas.create_text(bx, by, text=f"{amount:,}", fill="#000", font=("Arial", 9, "bold"))
 
     def draw_ante_markers(self, ante_map, seat_positions, seat_map, cx, cy):
         """
@@ -1911,26 +1893,10 @@ class HandReplayerGUI:
             # Slightly closer to the center than bet markers
             ax, ay = self.get_centerward_position_fraction(sx, sy, cx, cy, fraction=0.38)
 
-            # Measure amount text and pick radius so the text never overflows the disc
-            amt_text = f"{amount:,}"
-            try:
-                font = tkfont.Font(family="Arial", size=9, weight="bold")
-                text_w = font.measure(amt_text)
-                text_h = font.metrics("linespace")
-            except Exception:
-                text_w = len(amt_text) * 6
-                text_h = 12
-
-            padding = 8
-            r = max(12, int(max(text_w / 2.0, text_h / 2.0) + padding))
-
+            r = 22
             # Brown fill with dark outline for contrast
             self.table_canvas.create_oval(ax - r, ay - r, ax + r, ay + r, fill="#a0522d", outline="#3a2415", width=2)
-            # Draw amount centered in the ante disc
-            try:
-                self.table_canvas.create_text(ax, ay, text=amt_text, fill="#fff", font=font)
-            except Exception:
-                self.table_canvas.create_text(ax, ay, text=amt_text, fill="#fff", font=("Arial", 9, "bold"))
+            self.table_canvas.create_text(ax, ay, text=f"{amount:,}", fill="#fff", font=("Arial", 9, "bold"))
     # ====== UI updates and navigation ======
 
     def update_action_viewer(self):
