@@ -308,13 +308,13 @@ class HandReplayerGUI:
 
 
         # Notes panel (below Hand Playback)
-        #notes_title = tk.Label(right_frame, text="Notes")
-        #notes_title.pack(pady=(0, 0))
+        notes_title = tk.Label(right_frame, text="Notes")
+        notes_title.pack(pady=(0, 0))
 
         notes_frame = tk.Frame(right_frame)
         notes_frame.pack(fill='x', padx=10, pady=(0, 10))
 
-        # Layout: Notes label + single larger text area, then Save/Clear buttons
+        # Layout: Notes label + 2-row text, Mistakes label + 2-row text, then Save/Clear buttons
         try:
             notes_frame.columnconfigure(0, weight=1)
             notes_frame.columnconfigure(1, weight=0)
@@ -322,16 +322,18 @@ class HandReplayerGUI:
         except Exception:
             pass
 
-        # Make the notes box similar height to the Hand Playback area for visual balance.
         tk.Label(notes_frame, text="Notes").grid(row=0, column=0, sticky="w")
-        self.notes_text = tk.Text(notes_frame, height=12, width=48, wrap='word')
+        self.notes_text = tk.Text(notes_frame, height=2, width=48, wrap='word')
         self.notes_text.grid(row=1, column=0, columnspan=3, sticky="we", pady=(0, 6))
 
-        # Save/Clear buttons directly below the single notes box
+        tk.Label(notes_frame, text="Mistakes").grid(row=2, column=0, sticky="w")
+        self.mistakes_text = tk.Text(notes_frame, height=2, width=48, wrap='word')
+        self.mistakes_text.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 6))
+
         save_btn = tk.Button(notes_frame, text="Save (Ctrl+S)", command=self.save_current_hand_notes)
-        save_btn.grid(row=2, column=1, sticky="e", padx=(0, 6))
+        save_btn.grid(row=4, column=1, sticky="e", padx=(0, 6))
         clear_btn = tk.Button(notes_frame, text="Clear", command=self.clear_notes)
-        clear_btn.grid(row=2, column=2, sticky="e")
+        clear_btn.grid(row=4, column=2, sticky="e")
 
         # Mark notes as dirty on edit
         def _bind_dirty(widget):
@@ -342,6 +344,7 @@ class HandReplayerGUI:
             except Exception:
                 pass
         _bind_dirty(self.notes_text)
+        _bind_dirty(self.mistakes_text)
 
     # Bottom bar: hand selector and controls
         bottom_frame = tk.Frame(self.root)
