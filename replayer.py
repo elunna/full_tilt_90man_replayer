@@ -82,6 +82,9 @@ class HandReplayerGUI:
         self._loading_notes = False
         self.notes_text = None
         self.mistakes_text = None
+         # When True, navigation shortcuts (arrow keys / ctrl-arrow) should be suppressed
+        # because the user is actively editing the notes/mistakes Text widgets.
+        self._notes_focused = False
         # Hand selector markers for notes
         self.hand_note_markers = {}
         # Geometry cache for selector to place/update markers
@@ -140,19 +143,29 @@ class HandReplayerGUI:
         except Exception:
             pass
         # Hands
-        self.root.bind("<Left>", lambda e: self.navigate_hands(-1))  # previous hand
-        self.root.bind("<Right>", lambda e: self.navigate_hands(1))  # next hand
+         # Helper to check whether notes/mistakes Text widgets currently have focus.
+        def _notes_have_focus():
+            try:
+                focused = self.root.focus_get()
+                return focused is self.notes_text or focused is self.mistakes_text or getattr(self, "_notes_focused", False)
+            except Exception:
+                return getattr(self, "_notes_focused", False)
+
+        # Hands - only navigate when notes aren't focused (so text editing arrow keys work)
+        self.root.bind("<Left>", lambda e: None if _notes_have_focus() else self.navigate_hands(-1))  # previous hand
+        self.root.bind("<Right>", lambda e: None if _notes_have_focus() else self.navigate_hands(1))  # next hand
         # Actions
-        self.root.bind("<Up>", lambda e: self.prev_action())         # previous action
-        self.root.bind("<Down>", lambda e: self.next_action())       # next action
+        self.root.bind("<Up>", lambda e: None if _notes_have_focus() else self.prev_action())         # previous action
+        self.root.bind("<Down>", lambda e: None if _notes_have_focus() else self.next_action())       # next action
         # New shortcuts (unchanged):
         # - Ctrl+Left: jump to beginning of current hand
-        self.root.bind("<Control-Up>", lambda e: self.jump_to_hand_start())
+        self.root.bind("<Control-Up>", lambda e: None if _notes_have_focus() else self.jump_to_hand_start())
         # - Ctrl+Right: jump to end of current hand
-        self.root.bind("<Control-Down>", lambda e: self.jump_to_hand_end())
+        self.root.bind("<Control-Down>", lambda e: None if _notes_have_focus() else self.jump_to_hand_end())
+        
         # - Ctrl+Up: jump to last hand; Ctrl+Down: jump to first hand
-        self.root.bind("<Control-Right>", lambda e: (self.select_hand(len(self.hands) - 1) if self.hands else None))
-        self.root.bind("<Control-Left>", lambda e: (self.select_hand(0) if self.hands else None))
+        self.root.bind("<Control-Right>", lambda e: None if _notes_have_focus() else (self.select_hand(len(self.hands) - 1) if self.hands else None))
+        self.root.bind("<Control-Left>", lambda e: None if _notes_have_focus() else (self.select_hand(0) if self.hands else None))
         
     def prev_action(self):
         """Navigate to the previous action."""
