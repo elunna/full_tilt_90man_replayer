@@ -1123,11 +1123,35 @@ class HandReplayerGUI:
     def draw_dealer_button(self, seat_x, seat_y, cx, cy, radius=DEALER_BTN_RADIUS):
         """
         Draw a small white dealer button with a capital 'D' near the given seat position.
-        Positioned slightly toward the table center so it doesn't clip outside the table.
+        Positioned so it sits outside the player's seat box on the corner closer to the table
+        center to avoid overlapping cards/seat. Special-case the top-center seat to preserve
+        the previous visual placement.
         """
-        # Position fraction toward center; smaller fraction keeps it close to the seat
-        bx, by = self.get_centerward_position_fraction(seat_x, seat_y, cx, cy, fraction=0.18)
         r = int(radius)
+
+        # Detect a top-center seat (approximately horizontally centered and above table center).
+        # Keep the original small inward offset for that seat so visuals remain unchanged.
+        try:
+            is_top_center = (abs(seat_x - cx) < (SEAT_BOX_WIDTH * 0.15)) and (seat_y < cy)
+        except Exception:
+            is_top_center = False
+
+        if is_top_center:
+            # Keep prior inward placement for top-center seat.
+            bx, by = self.get_centerward_position_fraction(seat_x, seat_y, cx, cy, fraction=0.18)
+        else:
+            # Place the button outside the seat rectangle on the corner closest to the table center.
+            # Choose sign based on which side the table center lies relative to the seat.
+            sign_x = 1 if cx > seat_x else -1
+            sign_y = 1 if cy > seat_y else -1
+
+            half_w = SEAT_BOX_WIDTH / 2.0
+            half_h = SEAT_BOX_HEIGHT / 2.0
+            extra_margin = max(6, int(r * 0.5))
+
+            bx = seat_x + sign_x * (half_w + r + extra_margin)
+            by = seat_y + sign_y * (half_h + r + extra_margin)
+
         # White disc with dark outline
         self.table_canvas.create_oval(
             bx - r, by - r, bx + r, by + r,
@@ -1140,7 +1164,8 @@ class HandReplayerGUI:
             font=("Arial", 12, "bold")
         )
 
-    # ====== Action flash control ======
+
+# ====== Action flash control ======
 
     def draw_rounded_rect(self, x1, y1, x2, y2, radius=12, fill="", outline="", width=1):
         """
