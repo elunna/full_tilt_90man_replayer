@@ -295,7 +295,7 @@ class HandReplayerGUI:
         playback_scroll.pack(side='right', fill='y')
         self.action_info_text = tk.Text(
             playback_container,
-            height=14,  # reduced from 30 to avoid pushing panels off-screen
+            height=5,  # reduced from 30 to avoid pushing panels off-screen
             width=48,
             wrap='word',
             state='disabled',
@@ -303,13 +303,13 @@ class HandReplayerGUI:
             font=("Consolas", 11),
             yscrollcommand=playback_scroll.set
         )
-        self.action_info_text.pack(side='left', fill='both', expand=True)
+        self.action_info_text.pack(side='left', fill='both', expand=False)
         playback_scroll.config(command=self.action_info_text.yview)
 
 
         # Notes panel (below Hand Playback)
-        notes_title = tk.Label(right_frame, text="Notes")
-        notes_title.pack(pady=(0, 0))
+        #notes_title = tk.Label(right_frame, text="Notes")
+        #notes_title.pack(pady=(0, 0))
 
         notes_frame = tk.Frame(right_frame)
         notes_frame.pack(fill='x', padx=10, pady=(0, 10))
@@ -323,7 +323,7 @@ class HandReplayerGUI:
             pass
 
         tk.Label(notes_frame, text="Notes").grid(row=0, column=0, sticky="w")
-        self.notes_text = tk.Text(notes_frame, height=2, width=48, wrap='word')
+        self.notes_text = tk.Text(notes_frame, height=8, width=48, wrap='word')
         self.notes_text.grid(row=1, column=0, columnspan=3, sticky="we", pady=(0, 6))
 
         tk.Label(notes_frame, text="Mistakes").grid(row=2, column=0, sticky="w")
