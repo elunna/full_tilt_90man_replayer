@@ -78,6 +78,7 @@ class HandReplayerGUI:
         # Notes / DB state
         self._db = None
         self._db_path = None
+        # When True, navigation shortcuts (arrow keys / ctrl-arrow) should be suppressed
         self.notes_dirty = False
         self._loading_notes = False
         self.notes_text = None
@@ -142,8 +143,7 @@ class HandReplayerGUI:
             self.root.bind_all("<Command-s>", lambda e: self.save_current_hand_notes())  # macOS
         except Exception:
             pass
-        # Hands
-         # Helper to check whether notes/mistakes Text widgets currently have focus.
+        # Helper to check whether notes/mistakes Text widgets currently have focus.
         def _notes_have_focus():
             try:
                 focused = self.root.focus_get()
@@ -157,6 +157,15 @@ class HandReplayerGUI:
         # Actions
         self.root.bind("<Up>", lambda e: None if _notes_have_focus() else self.prev_action())         # previous action
         self.root.bind("<Down>", lambda e: None if _notes_have_focus() else self.next_action())       # next action
+        # New shortcuts (unchanged):
+        # - Ctrl+Left: jump to beginning of current hand
+        self.root.bind("<Control-Up>", lambda e: None if _notes_have_focus() else self.jump_to_hand_start())
+        # - Ctrl+Right: jump to end of current hand
+        self.root.bind("<Control-Down>", lambda e: None if _notes_have_focus() else self.jump_to_hand_end())
+        
+        # - Ctrl+Up: jump to last hand; Ctrl+Down: jump to first hand
+        self.root.bind("<Control-Right>", lambda e: None if _notes_have_focus() else (self.select_hand(len(self.hands) - 1) if self.hands else None))
+        self.root.bind("<Control-Left>", lambda e: None if _notes_have_focus() else (self.select_hand(0) if self.hands else None))
         # New shortcuts (unchanged):
         # - Ctrl+Left: jump to beginning of current hand
         self.root.bind("<Control-Up>", lambda e: None if _notes_have_focus() else self.jump_to_hand_start())
@@ -357,6 +366,37 @@ class HandReplayerGUI:
                 pass
         _bind_dirty(self.notes_text)
         _bind_dirty(self.mistakes_text)
+        # Track focus on notes/mistakes text widgets so global navigation shortcuts
+        # are suppressed while the user is actively editing text.
+        try:
+            self.notes_text.bind("<FocusIn>", lambda e: setattr(self, "_notes_focused", True))
+            self.notes_text.bind("<FocusOut>", lambda e: setattr(self, "_notes_focused", False))
+            self.mistakes_text.bind("<FocusIn>", lambda e: setattr(self, "_notes_focused", True))
+            self.mistakes_text.bind("<FocusOut>", lambda e: setattr(self, "_notes_focused", False))
+        except Exception:
+            pass
+
+        # Ensure clicking anywhere else in the window clears focus from the notes
+        # panel so navigation shortcuts resume. Some widgets (e.g., Canvas) don't
+        # take focus by default, so explicitly move focus to root on outside clicks.
+        def _clear_notes_focus_on_click(event):
+            try:
+                w = event.widget
+                # If the click was inside the notes widgets, keep focus there.
+                if w is self.notes_text or w is self.mistakes_text:
+                    return
+                try:
+                    self.root.focus_set()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        try:
+            # Use add="+" so we don't replace existing click bindings.
+            self.root.bind_all("<Button-1>", _clear_notes_focus_on_click, add="+")
+        except Exception:
+            pass
 
     # Bottom bar: hand selector and controls
         bottom_frame = tk.Frame(self.root)
