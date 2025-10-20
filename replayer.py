@@ -136,13 +136,18 @@ class HandReplayerGUI:
         self.bind_keys()
 
     def bind_keys(self):
-        """Bind arrow keys: Left/Right = hands; Up/Down = actions."""
+        """Bind arrow keys and global shortcuts.
+        Left/Right = hands; Up/Down = actions.
+        Also sets up global save and stack-view toggle shortcuts while respecting
+        focus in the Notes/Mistakes text widgets so editing isn't interrupted.
+        """
         # Global save shortcut for notes
         try:
             self.root.bind_all("<Control-s>", lambda e: self.save_current_hand_notes())
             self.root.bind_all("<Command-s>", lambda e: self.save_current_hand_notes())  # macOS
         except Exception:
             pass
+
         # Helper to check whether notes/mistakes Text widgets currently have focus.
         def _notes_have_focus():
             try:
@@ -151,31 +156,46 @@ class HandReplayerGUI:
             except Exception:
                 return getattr(self, "_notes_focused", False)
 
-        # Hands - only navigate when notes aren't focused (so text editing arrow keys work)
-        self.root.bind("<Left>", lambda e: None if _notes_have_focus() else self.navigate_hands(-1))  # previous hand
-        self.root.bind("<Right>", lambda e: None if _notes_have_focus() else self.navigate_hands(1))  # next hand
-        # Actions
-        self.root.bind("<Up>", lambda e: None if _notes_have_focus() else self.prev_action())         # previous action
-        self.root.bind("<Down>", lambda e: None if _notes_have_focus() else self.next_action())       # next action
-        # New shortcuts (unchanged):
-        # - Ctrl+Left: jump to beginning of current hand
-        self.root.bind("<Control-Up>", lambda e: None if _notes_have_focus() else self.jump_to_hand_start())
-        # - Ctrl+Right: jump to end of current hand
-        self.root.bind("<Control-Down>", lambda e: None if _notes_have_focus() else self.jump_to_hand_end())
-        
-        # - Ctrl+Up: jump to last hand; Ctrl+Down: jump to first hand
-        self.root.bind("<Control-Right>", lambda e: None if _notes_have_focus() else (self.select_hand(len(self.hands) - 1) if self.hands else None))
-        self.root.bind("<Control-Left>", lambda e: None if _notes_have_focus() else (self.select_hand(0) if self.hands else None))
-        # New shortcuts (unchanged):
-        # - Ctrl+Left: jump to beginning of current hand
-        self.root.bind("<Control-Up>", lambda e: None if _notes_have_focus() else self.jump_to_hand_start())
-        # - Ctrl+Right: jump to end of current hand
-        self.root.bind("<Control-Down>", lambda e: None if _notes_have_focus() else self.jump_to_hand_end())
-        
-        # - Ctrl+Up: jump to last hand; Ctrl+Down: jump to first hand
-        self.root.bind("<Control-Right>", lambda e: None if _notes_have_focus() else (self.select_hand(len(self.hands) - 1) if self.hands else None))
-        self.root.bind("<Control-Left>", lambda e: None if _notes_have_focus() else (self.select_hand(0) if self.hands else None))
-        
+        # Simple navigation (only when notes/mistakes aren't focused)
+        self.root.bind("<Left>",  lambda e: None if _notes_have_focus() else self.navigate_hands(-1))  # previous hand
+        self.root.bind("<Right>", lambda e: None if _notes_have_focus() else self.navigate_hands(1))   # next hand
+        self.root.bind("<Up>",    lambda e: None if _notes_have_focus() else self.prev_action())      # previous action
+        self.root.bind("<Down>",  lambda e: None if _notes_have_focus() else self.next_action())      # next action
+
+        # Control/Command + Arrows for quick jumps (guarded by notes focus)
+        try:
+            # Windows/Linux: Control + ...
+            self.root.bind("<Control-Left>",  lambda e: None if _notes_have_focus() else (self.select_hand(0) if self.hands else None))
+            self.root.bind("<Control-Right>", lambda e: None if _notes_have_focus() else (self.select_hand(len(self.hands) - 1) if self.hands else None))
+            self.root.bind("<Control-Up>",    lambda e: None if _notes_have_focus() else self.jump_to_hand_start())
+            self.root.bind("<Control-Down>",  lambda e: None if _notes_have_focus() else self.jump_to_hand_end())
+            # macOS: Command variants
+            self.root.bind_all("<Command-Left>",  lambda e: None if _notes_have_focus() else (self.select_hand(0) if self.hands else None))
+            self.root.bind_all("<Command-Right>", lambda e: None if _notes_have_focus() else (self.select_hand(len(self.hands) - 1) if self.hands else None))
+            self.root.bind_all("<Command-Up>",    lambda e: None if _notes_have_focus() else self.jump_to_hand_start())
+            self.root.bind_all("<Command-Down>",  lambda e: None if _notes_have_focus() else self.jump_to_hand_end())
+        except Exception:
+            # Best-effort: if any platform doesn't support a sequence, ignore it.
+            pass
+
+        # Stack view mode shortcuts:
+        # - Ctrl-B/Command-B => BB
+        # - Ctrl-T/Command-T => True BB (tBB)
+        # - Ctrl-M/Command-M => M
+        # - Ctrl-C/Command-C => Chips
+        try:
+            # Use bind_all so shortcuts work regardless of widget focus, but check notes focus inside lambda.
+            self.root.bind_all("<Control-b>", lambda e: None if _notes_have_focus() else self.stack_view_mode.set("BB"))
+            self.root.bind_all("<Control-t>", lambda e: None if _notes_have_focus() else self.stack_view_mode.set("True BB"))
+            self.root.bind_all("<Control-m>", lambda e: None if _notes_have_focus() else self.stack_view_mode.set("M"))
+            self.root.bind_all("<Control-c>", lambda e: None if _notes_have_focus() else self.stack_view_mode.set("Chips"))
+            # macOS Command-key variants
+            self.root.bind_all("<Command-b>", lambda e: None if _notes_have_focus() else self.stack_view_mode.set("BB"))
+            self.root.bind_all("<Command-t>", lambda e: None if _notes_have_focus() else self.stack_view_mode.set("True BB"))
+            self.root.bind_all("<Command-m>", lambda e: None if _notes_have_focus() else self.stack_view_mode.set("M"))
+            self.root.bind_all("<Command-c>", lambda e: None if _notes_have_focus() else self.stack_view_mode.set("Chips"))
+        except Exception:
+            pass
     def prev_action(self):
         """Navigate to the previous action."""
         if self.current_action_index > 0:
