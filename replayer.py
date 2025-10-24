@@ -1335,6 +1335,31 @@ class HandReplayerGUI:
             return 0
         return int(m.group(1).replace(',', ''))
 
+    def _extract_amount_in_parentheses(self, text: str):
+        """
+        If the detail contains an amount in parentheses like "(4,280)" return it as
+        an int (commas allowed). Returns None if no parenthesized amount is found.
+        Useful for lines such as:
+          "lunatic007 wins side pot #2 (4,280) with a pair of Aces"
+        where the first numeric token is the side-pot index (2) but the actual
+        amount is inside the parentheses.
+        """
+        if not text:
+            return None
+        m = re.search(r'\(\s*([\d,]+(?:\.\d+)?)\s*\)', text)
+        if not m:
+            return None
+        # Normalize to a numeric value (integer chips). Round if decimals are present.
+        s = m.group(1).replace(',', '')
+        try:
+            val = float(s)
+            return int(round(val))
+        except Exception:
+            try:
+                return int(s)
+            except Exception:
+                return None
+
     def _extract_raise_to_amount(self, text: str) -> int:
         """
         Extract the target 'to' amount from a raise string (e.g., 'raises to 300').
@@ -1514,7 +1539,14 @@ class HandReplayerGUI:
                     sub_from_stack(player, delta)
                     street_non_ante[player] = prev + delta
                 elif action in ('wins', 'collected'):
-                    amt = self._extract_first_amount(detail)
+                    # When winning side pots the detail can include the side-pot index
+                    # before the parenthesized amount (e.g., "wins side pot #2 (4,280) ...").
+                    # Prefer amount in parentheses if present.
+                    par = self._extract_amount_in_parentheses(detail)
+                    if par is not None:
+                        amt = par
+                    else:
+                        amt = self._extract_first_amount(detail)
                     add_to_stack(player, amt)
                 elif action == 'uncalled':
                     # Return the uncalled portion to the bettor and reduce their displayed contribution
@@ -1629,7 +1661,13 @@ class HandReplayerGUI:
                     player = act.get('player')
                     if not player or player == 'Board':
                         continue
-                    amt = self._extract_first_amount(act.get('detail', '') or '')
+                    detail = act.get('detail', '') or ''
+                    # Prefer parenthesized amount when present (handles "side pot #2 (4,280)")
+                    par = self._extract_amount_in_parentheses(detail)
+                    if par is not None:
+                        amt = par
+                    else:
+                        amt = self._extract_first_amount(detail)
                     winnings[player] = winnings.get(player, 0) + max(0, amt)
             if s == target_street:
                 break
