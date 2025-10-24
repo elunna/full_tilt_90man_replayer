@@ -2300,19 +2300,29 @@ class HandReplayerGUI:
     def _compute_true_bb(self, hand):
         """
         True BB = (sum of all antes and blinds at the very start of the hand) * 2/3.
-        We scan preflop actions from the top, summing consecutive 'posts' and 'antes'
-        until the first non-forced-bet action appears.
+        Prefer header-derived values (header is authoritative). If header doesn't
+        provide blinds/antes, fall back to scanning consecutive preflop 'posts'
+        and 'antes' actions from the top of the action list.
         Returns an integer number of chips, or None if unavailable.
         """
         try:
-            actions_pf = hand.get('actions', {}).get('preflop', []) or []
-            forced_sum = 0
-            for a in actions_pf:
-                act = (a.get('action') or '').lower()
-                if act in ('posts', 'antes'):
-                    forced_sum += self._extract_first_amount(a.get('detail', '') or '')
-                else:
-                    break
+            # Prefer header-derived blinds/ante values (this avoids partial/all-in posts
+            # being interpreted as the full blind amounts).
+            sb, bb, ante = self._extract_blinds_antes(hand)
+            if (sb is None and bb is None and (ante is None or ante == 0)):
+                # No header info available, fall back to scanning leading forced bets.
+                actions_pf = hand.get('actions', {}).get('preflop', []) or []
+                forced_sum = 0
+                for a in actions_pf:
+                    act = (a.get('action') or '').lower()
+                    if act in ('posts', 'antes'):
+                        forced_sum += self._extract_first_amount(a.get('detail', '') or '')
+                    else:
+                        break
+            else:
+                # If header provided values, compute total forced sum from them.
+                players_count = len((hand or {}).get('players', []) or [])
+                forced_sum = (sb or 0) + (bb or 0) + (ante or 0) * players_count
             if forced_sum <= 0:
                 return None
             return int(round((forced_sum * 2) / 3.0))
@@ -2393,10 +2403,60 @@ class HandReplayerGUI:
 
     def _extract_blinds_antes(self, hand):
         """
-        Derive small/big blinds and ante amounts from preflop actions.
+        Historically this scanned the preflop 'posts' and 'antes' actions to
+        determine SB/BB/ante. That is fragile because players sometimes post
+        partial blinds (all-in) which leads to incorrect blind detection.
+
+        This implementation prefers parsing the authoritative values from the
+        hand header. If header parsing fails to produce values, it falls back
+        to scanning preflop actions as before.
         Returns (sb, bb, ante) as ints or None if not seen.
         """
+        # Try to extract from header first. Return raw capture strings which are
+        # then normalized via _extract_first_amount. This keeps numeric parsing
+        # centralized.
+        def _extract_blinds_antes_from_header(header_text):
+            if not header_text or not isinstance(header_text, str):
+                return None, None, None
+            text = header_text
+            # Common header patterns include "$0.25/$0.50", "Blinds $0.25/$0.50", "($0.25 / $0.50)"
+            # Capture SB/BB pairs like "0.25/0.50" or with $ and optional commas/decimals.
+            sb_s = bb_s = ante_s = None
+            m = re.search(r'\$?\s*([\d,]+(?:\.\d+)?)\s*/\s*\$?\s*([\d,]+(?:\.\d+)?)', text)
+            if m:
+                sb_s = m.group(1)
+                bb_s = m.group(2)
+            # Look for explicit ante e.g. "Ante $0.10" or "antes $0.10"
+            m2 = re.search(r'ante[s]?\s*(?:[:=]\s*)?\$?\s*([\d,]+(?:\.\d+)?)', text, flags=re.IGNORECASE)
+            if m2:
+                ante_s = m2.group(1)
+            # If not found, try parenthesized forms
+            if sb_s is None and bb_s is None:
+                m3 = re.search(r'\(\s*\$?\s*([\d,]+(?:\.\d+)?)\s*/\s*\$?\s*([\d,]+(?:\.\d+)?)\s*\)', text)
+                if m3:
+                    sb_s = m3.group(1)
+                    bb_s = m3.group(2)
+            return sb_s, bb_s, ante_s
+
         sb = bb = ante = None
+        try:
+            header = (hand or {}).get('header') or ""
+            sb_raw, bb_raw, ante_raw = _extract_blinds_antes_from_header(header)
+            if sb_raw is not None:
+                sb = self._extract_first_amount(sb_raw)
+            if bb_raw is not None:
+                bb = self._extract_first_amount(bb_raw)
+            if ante_raw is not None:
+                ante = self._extract_first_amount(ante_raw)
+            # If any header-derived value exists, prefer header (authoritative).
+            if sb is not None or bb is not None or ante is not None:
+                return sb, bb, ante
+        except Exception:
+            # Ignore header parsing errors and fall back to legacy action-based parsing.
+            pass
+
+        # Fallback: scan preflop actions (legacy behavior). This preserves behavior
+        # for hand histories that do not embed blinds/antes in the header.
         for act in hand.get('actions', {}).get('preflop', []):
             action = act.get('action')
             detail = (act.get('detail') or "").lower()
