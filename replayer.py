@@ -1,11 +1,12 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 import math
 import re
 from ft_hand_parser import FullTiltHandParser
 import os
 import traceback
 import sqlite3
+import json
 
 # Optional high-quality PNG loading/resizing via Pillow
 try:
@@ -82,8 +83,11 @@ class HandReplayerGUI:
         self.notes_dirty = False
         self._loading_notes = False
         self.notes_text = None
-        self.mistakes_text = None
-         # When True, navigation shortcuts (arrow keys / ctrl-arrow) should be suppressed
+        # Replacing free-text mistakes box with a readonly combobox populated
+        # from an external JSON file. Stored value is written into the 'mistakes'
+        # column of the notes DB (same as before).
+        self.mistakes_combo = None
+        # When True, navigation shortcuts (arrow keys / ctrl-arrow) should be suppressed
         # because the user is actively editing the notes/mistakes Text widgets.
         self._notes_focused = False
         # Hand selector markers for notes
@@ -122,7 +126,10 @@ class HandReplayerGUI:
 
         # Initialize database for notes
         self._init_db()
-        
+
+        # Load mistake options from external JSON file (alphabetized list of strings)
+        self.mistake_options = self._load_mistake_options()
+
         self.hand_boxes = []
         self.build_gui()
 
@@ -368,8 +375,22 @@ class HandReplayerGUI:
         self.notes_text.grid(row=1, column=0, columnspan=3, sticky="we", pady=(0, 6))
 
         tk.Label(notes_frame, text="Mistakes").grid(row=2, column=0, sticky="w")
-        self.mistakes_text = tk.Text(notes_frame, height=2, width=48, wrap='word')
-        self.mistakes_text.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 6))
+        # Dropdown populated from external JSON file. readonly to force selection
+        # from predefined list. Width here is characters; use a width similar to prior Text.
+        try:
+            vals = self.mistake_options or []
+            self.mistakes_combo = ttk.Combobox(notes_frame, values=vals, state="readonly", width=48)
+            self.mistakes_combo.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 6))
+            # Ensure empty default
+            self.mistakes_combo.set("")
+            try:
+                self.mistakes_combo.bind("<<ComboboxSelected>>", lambda e: self.on_notes_changed())
+            except Exception:
+                pass
+        except Exception:
+            # Fallback: simple Entry if ttk or JSON loading fails
+            self.mistakes_combo = tk.Entry(notes_frame, width=48)
+            self.mistakes_combo.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 6))
 
         save_btn = tk.Button(notes_frame, text="Save (Ctrl+S)", command=self.save_current_hand_notes)
         save_btn.grid(row=4, column=1, sticky="e", padx=(0, 6))
@@ -381,11 +402,21 @@ class HandReplayerGUI:
             if widget is None:
                 return
             try:
-                widget.bind("<KeyRelease>", self.on_notes_changed)
+                # Text widgets: detect typing
+                if isinstance(widget, tk.Text):
+                    widget.bind("<KeyRelease>", self.on_notes_changed)
+                else:
+                    # Combobox (ttk.Combobox) fires <<ComboboxSelected>> when selection changes.
+                    try:
+                        widget.bind("<<ComboboxSelected>>", lambda e: self.on_notes_changed())
+                    except Exception:
+                        # Fallback to generic key event if not supported
+                        widget.bind("<KeyRelease>", self.on_notes_changed)
             except Exception:
                 pass
         _bind_dirty(self.notes_text)
-        _bind_dirty(self.mistakes_text)
+        _bind_dirty(self.mistakes_combo)
+
         # Track focus on notes/mistakes text widgets so global navigation shortcuts
         # are suppressed while the user is actively editing text.
         try:
@@ -1360,6 +1391,26 @@ class HandReplayerGUI:
             except Exception:
                 return None
 
+    def _load_mistake_options(self):
+        """
+        Load mistake types from a JSON file named 'mistakes.json' located next
+        to replayer.py. Expected format: a JSON array of strings. Returns a
+        case-insensitively sorted list of unique strings or [].
+        """
+        try:
+            base = os.path.dirname(__file__)
+            path = os.path.join(base, "mistakes.json")
+            if not os.path.isfile(path):
+                return []
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if not isinstance(data, list):
+                return []
+            # Normalize to strings, dedupe, and sort case-insensitively
+            opts = sorted({str(x) for x in data if x is not None}, key=lambda s: s.lower())
+            return opts
+        except Exception:
+            return []
     def _extract_raise_to_amount(self, text: str) -> int:
         """
         Extract the target 'to' amount from a raise string (e.g., 'raises to 300').
@@ -3031,16 +3082,24 @@ class HandReplayerGUI:
         """
         Load notes for the currently selected hand into the Notes and Mistakes text widgets.
         """
-        if not (self.notes_text and self.mistakes_text):
+        # Accept either the new combobox or fallback entry; if neither present, do nothing.
+        if not (self.notes_text and self.mistakes_combo):
             return
         hand_id = self._current_hand_id()
         note_val, mistakes_val = self._load_notes_from_db(hand_id)
         self._loading_notes = True
         try:
-            self.notes_text.delete("1.0", tk.END)
-            self.notes_text.insert("1.0", note_val or "")
-            self.mistakes_text.delete("1.0", tk.END)
-            self.mistakes_text.insert("1.0", mistakes_val or "")
+            try:
+                self.notes_text.delete("1.0", tk.END)
+                self.notes_text.insert("1.0", note_val or "")
+            except Exception:
+                pass
+            try:
+                if self.mistakes_combo:
+                    # Show saved value even if not in list (do not mutate the list).
+                    self.mistakes_combo.set(mistakes_val or "")
+            except Exception:
+                pass
             self.notes_dirty = False
         finally:
             self._loading_notes = False
@@ -3056,8 +3115,14 @@ class HandReplayerGUI:
         mistakes_val = ""
         if self.notes_text:
             note_val = self.notes_text.get("1.0", "end-1c")
-        if self.mistakes_text:
-            mistakes_val = self.mistakes_text.get("1.0", "end-1c")
+        # Read selection/text from the mistakes widget (Combobox or Entry)
+        try:
+            if self.mistakes_combo:
+                mistakes_val = (self.mistakes_combo.get() or "").strip()
+            else:
+                mistakes_val = ""
+        except Exception:
+            mistakes_val = ""
         self._save_notes_to_db(hand_id, note_val, mistakes_val)
         self.notes_dirty = False
         # Update marker for current hand
@@ -3071,8 +3136,11 @@ class HandReplayerGUI:
         """
         if self.notes_text:
             self.notes_text.delete("1.0", tk.END)
-        if self.mistakes_text:
-            self.mistakes_text.delete("1.0", tk.END)
+        try:
+            if self.mistakes_combo:
+                self.mistakes_combo.set("")
+        except Exception:
+            pass
         hand_id = self._current_hand_id()
         if hand_id:
             try:
@@ -3103,8 +3171,13 @@ class HandReplayerGUI:
         mistakes_val = ""
         if self.notes_text:
             note_val = self.notes_text.get("1.0", "end-1c")
-        if self.mistakes_text:
-            mistakes_val = self.mistakes_text.get("1.0", "end-1c")
+        try:
+            if self.mistakes_combo:
+                mistakes_val = (self.mistakes_combo.get() or "").strip()
+            else:
+                mistakes_val = ""
+        except Exception:
+            mistakes_val = ""
         self._save_notes_to_db(hand_id, note_val, mistakes_val)
         self.notes_dirty = False
 
