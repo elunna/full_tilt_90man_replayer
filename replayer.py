@@ -7,6 +7,8 @@ import os
 import traceback
 import sqlite3
 import json
+import tkinter.simpledialog as simpledialog
+import tkinter.messagebox as messagebox
 
 # Optional high-quality PNG loading/resizing via Pillow
 try:
@@ -379,12 +381,15 @@ class HandReplayerGUI:
         # from predefined list. Width here is characters; use a width similar to prior Text.
         try:
             vals = self.mistake_options or []
-            self.mistakes_combo = ttk.Combobox(notes_frame, values=vals, state="readonly", width=48)
+            # Add a sentinel entry that will prompt the user to create a new mistake type.
+            vals_with_new = list(vals) + ["New Mistake"]
+            self.mistakes_combo = ttk.Combobox(notes_frame, values=vals_with_new, state="readonly", width=48)
             self.mistakes_combo.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 6))
             # Ensure empty default
             self.mistakes_combo.set("")
             try:
-                self.mistakes_combo.bind("<<ComboboxSelected>>", lambda e: self.on_notes_changed())
+                # When an item is selected, handle "New Mistake" specially; otherwise treat as notes-change.
+                self.mistakes_combo.bind("<<ComboboxSelected>>", self.on_mistake_selected)
             except Exception:
                 pass
         except Exception:
@@ -1411,6 +1416,102 @@ class HandReplayerGUI:
             return opts
         except Exception:
             return []
+
+    def on_mistake_selected(self, event=None):
+        """
+        Handler for selection changes in the mistakes combobox.
+        If the user selects the sentinel "New Mistake" value, open a small
+        dialog to request a new mistake name, append it to mistakes.json,
+        reload the combobox values, and select the newly-added value.
+        Otherwise, propagate as a notes change.
+        """
+        try:
+            sel = (self.mistakes_combo.get() or "").strip()
+        except Exception:
+            return
+
+        if sel != "New Mistake":
+            # Normal selection — treat as a notes change so autosave/UI updates happen.
+            try:
+                self.on_notes_changed()
+            except Exception:
+                pass
+            return
+
+        # Prompt the user for the new mistake name
+        try:
+            parent = getattr(self, "root", None)
+            new_name = simpledialog.askstring("Add Mistake", "Enter new mistake type:", parent=parent)
+            if not new_name:
+                # Cancelled or empty — reset selection
+                try:
+                    self.mistakes_combo.set("")
+                except Exception:
+                    pass
+                return
+            new_name = new_name.strip()
+            if not new_name:
+                try:
+                    self.mistakes_combo.set("")
+                except Exception:
+                    pass
+                return
+
+            # Persist the new entry and refresh the combobox values
+            self._add_new_mistake_to_file(new_name)
+            # Reload options from disk and update the widget values (preserve sentinel)
+            self.mistake_options = self._load_mistake_options()
+            vals = self.mistake_options or []
+            vals_with_new = list(vals) + ["New Mistake"]
+            try:
+                self.mistakes_combo['values'] = vals_with_new
+                # Select the newly-created value
+                self.mistakes_combo.set(new_name)
+            except Exception:
+                pass
+
+            # Notify notes changed so autosave and markers behave as if user selected the value
+            try:
+                self.on_notes_changed()
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                messagebox.showerror("Add Mistake", f"Failed to add new mistake: {e}", parent=getattr(self, "root", None))
+            except Exception:
+                pass
+
+    def _add_new_mistake_to_file(self, new_value: str):
+        """
+        Upsert a new mistake string into mistakes.json next to this file.
+        Deduplicates case-insensitively and sorts case-insensitively.
+        Raises exceptions back to caller on failure.
+        """
+        base = os.path.dirname(__file__)
+        path = os.path.join(base, "mistakes.json")
+        data = []
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    existing = json.load(fh)
+                if isinstance(existing, list):
+                    # keep only non-None string representations
+                    data = [str(x) for x in existing if x is not None]
+            except Exception:
+                # If we cannot read/parse, start fresh but do not swallow errors (let caller handle)
+                data = []
+
+        # Build case-insensitive map to preserve first-seen casing for existing items,
+        # but override with the newly supplied casing for the new entry.
+        ci_map = {s.lower(): s for s in data}
+        if new_value.lower() in ci_map:
+            # nothing to do — already present
+            return
+        ci_map[new_value.lower()] = new_value
+        new_list = sorted(ci_map.values(), key=lambda s: s.lower())
+        # Write back
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(new_list, fh, indent=2, ensure_ascii=False)
     def _extract_raise_to_amount(self, text: str) -> int:
         """
         Extract the target 'to' amount from a raise string (e.g., 'raises to 300').
