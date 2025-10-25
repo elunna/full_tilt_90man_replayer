@@ -38,6 +38,9 @@ DEALER_BTN_MARGIN = 6
 # Action flash overlay duration (milliseconds)
 ACTION_FLASH_MS = 1000
 INFO_PLACEHOLDER = "—"
+# Sentinel shown in the mistakes combobox to let users add a new mistake.
+# Choose a string unlikely to be present in users' mistakes.json.
+MISTAKE_SENTINEL = "— Add new mistake —"
 
 def get_hero_result(hand, hero=None):
     vpip = False
@@ -382,7 +385,7 @@ class HandReplayerGUI:
         try:
             vals = self.mistake_options or []
             # Add a sentinel entry that will prompt the user to create a new mistake type.
-            vals_with_new = list(vals) + ["New Mistake"]
+            vals_with_new = list(vals) + [MISTAKE_SENTINEL]
             self.mistakes_combo = ttk.Combobox(notes_frame, values=vals_with_new, state="readonly", width=48)
             self.mistakes_combo.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 6))
             # Ensure empty default
@@ -1430,7 +1433,7 @@ class HandReplayerGUI:
         except Exception:
             return
 
-        if sel != "New Mistake":
+        if sel != MISTAKE_SENTINEL:
             # Normal selection — treat as a notes change so autosave/UI updates happen.
             try:
                 self.on_notes_changed()
@@ -1462,7 +1465,7 @@ class HandReplayerGUI:
             # Reload options from disk and update the widget values (preserve sentinel)
             self.mistake_options = self._load_mistake_options()
             vals = self.mistake_options or []
-            vals_with_new = list(vals) + ["New Mistake"]
+            vals_with_new = list(vals) + [MISTAKE_SENTINEL]
             try:
                 self.mistakes_combo['values'] = vals_with_new
                 # Select the newly-created value
