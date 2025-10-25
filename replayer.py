@@ -391,8 +391,10 @@ class HandReplayerGUI:
             # Ensure empty default
             self.mistakes_combo.set("")
             try:
-                # When an item is selected, handle "New Mistake" specially; otherwise treat as notes-change.
-                self.mistakes_combo.bind("<<ComboboxSelected>>", self.on_mistake_selected)
+                # When an item is selected, handle the sentinel specially; otherwise treat as notes-change.
+                # Use add="+" so other bindings (e.g., the generic on_notes_changed binding below)
+                # do not replace this handler.
+                self.mistakes_combo.bind("<<ComboboxSelected>>", self.on_mistake_selected, add="+")
             except Exception:
                 pass
         except Exception:
@@ -416,7 +418,9 @@ class HandReplayerGUI:
                 else:
                     # Combobox (ttk.Combobox) fires <<ComboboxSelected>> when selection changes.
                     try:
-                        widget.bind("<<ComboboxSelected>>", lambda e: self.on_notes_changed())
+                        # Use add="+" so we don't clobber any existing <<ComboboxSelected>> handlers
+                        # (notably the on_mistake_selected handler bound above).
+                        widget.bind("<<ComboboxSelected>>", lambda e: self.on_notes_changed(), add="+")
                     except Exception:
                         # Fallback to generic key event if not supported
                         widget.bind("<KeyRelease>", self.on_notes_changed)
@@ -3223,6 +3227,7 @@ class HandReplayerGUI:
         try:
             if self.mistakes_combo:
                 mistakes_val = (self.mistakes_combo.get() or "").strip()
+                # Never persist the sentinel value itself; treat it as "no selection".
             else:
                 mistakes_val = ""
         except Exception:
